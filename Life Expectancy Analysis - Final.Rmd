@@ -1,0 +1,3249 @@
+
+---
+title: "Life Expectancy Analysis"
+authors: "Roberto Di Lauro, Gianluca Notarangelo, Chiara Cangelosi"
+date: "2024-11-19"
+output:
+  html_document:
+      toc: true
+      toc_depth: 3
+      number_sections: true
+      theme: united
+      highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#knitr::opts_knit$set(root.dir = "C:/Users/wrath/Documents")  # Directory sicura
+library(dplyr)
+library(ggplot2)
+library(ggcorrplot)
+library(reshape2)
+library(patchwork)
+library(moments)
+library(car)
+library(plotly)
+library(countrycode)
+library(gridExtra)
+library(MASS)
+library(GGally)
+library(leaps)
+library(glmnet)
+library(caret)
+library(lmtest)
+```
+**Statistical Data Analysis project: Life Expectancy analysis**
+
+
+# Introduction
+
+Life expectancy is a statistical measure which can give us a lot of information about quality of life. It's based on the estimation of the average remaining years of life at a given age. Life expectancy prediction is a complex and multifaceted problem that involves analyzing a wide range of factors that can influence a person's lifespan. There are several key considerations that must be taken into account when attempting to accurately predict life expectancy. It is important to recognize that life expectancy is not a fixed value that is determined solely by genetics or other inherent factors. Rather, it is influenced by a wide range of environmental, social, and behavioral factors that can vary significantly across different populations and individuals. For example, access to healthcare, nutrition, and clean water can all have a significant impact on life expectancy, as can lifestyle factors such as smoking, alcohol consumption, and physical activity levels. This project aims to explain how the different factors can influence the response variable of life expectancy. The data set that allowed us to work has been provided by Kaggle source, and is based on the data of the World Health Organization (WHO). This agency works to promote health and keep the world safe. The data explores life expectancy, health, immunization, economic and demographic information about 179 countries between the years 2000 and 2015. There are 2.864 observations and 21 variables. Our analysis sought to understand the factors influencing life expectancy and how these changed when considering different group of countries.
+
+# Data Preparation and initial exploration
+
+## Importing the data set
+
+The analysis began by setting the work directory and by importing the data set from a CSV file named "Life-Expectancy-Data-Updated1". The data was imported using the read.csv function.
+
+```{r}
+#Setting work directory
+#setwd("/Users/chiaracangelosi/Documents/1-Uni/DataScience/SL/Project")
+#setwd("C:/Users/wrath/Downloads")
+setwd("C:/Users/g2not/Documents/Data")
+
+#Uploading data
+data <- read.csv("Life-Expectancy-Data-Updated.csv")
+str(data)
+```
+To preserve the integrity of the original data, we create a copy of it. In this way any pre-processing and manipulation is performed on the copy, leaving the original one unaltered and available for reference if needed.
+
+```{r}
+df <- data
+```
+
+
+## Understanding the data
+
+While checking data set structure, we can observe that it consists of 2864 observations and 21 variables. 
+These variables are: "Country" and "Year", to which all the other observations are referred to. Our target variable, "Life_expectancy" (average life expectancy of both genders). Countries are distributed in the variable "Region". "Infant_deaths" , "Under_five_deaths" and "Adult_mortality" represent deaths rate (per 1000 individuals of the population) respectively for infant, children under 5 years and adult aged between 15 and 60 years old. "Alcohol_consumption" expresses the consumption in liters of pure alcohol per capita for 15+ years old. "Hepatitis_B", "Measles", "Polio" and "Diphtheria" represent the vaccine coverage among 1-year-olds of, respectevely, Hepatitis B, Measles(MCV1), Polio(Pol3) and  Diphtheria tetanus toxoid and pertussis (DTP3). "Incidents_HIV" for 1000 individuals of population aged 15-49. "GDP_per_capita" is the GDP in current USD. "Population_mln" is the total population of countries in millions. "BMI" (Body Mass Index) is a measure of nutritional status in adults (it is defined as a person's weight in kilograms divided by the square of the height in meters). Then there are "Thinness_five_nine_years" and "Thinness_ten_nineteen_years" which is the prevalence of thinness among five to nine year-olds and adolescents aged 10-19 years. "Schooling" is an average of years people aged 25+ spent in formal education. "Economy_status_Developed" and "Economy_status_Developing" gives a social and economic insight.Our variables are mainly numerical.
+
+![Tabella Variabili](C:/Users/g2not/Desktop/Università/Statistical Learning and Data Analysis - Module A/Progetto/Variables.png)
+
+# Exploratory Data Analysis (EDA)
+
+## Preprocessing and Univariate Analysis
+
+### Handling Missing Values
+
+Before proceeding it is important to check if there are missing values, which can affect the reliability of the results. There are no missing values, so we can proceed without applying any strategy (like omission or interpolation ecc.).
+
+```{r}
+missing_values <- colSums(is.na(df))
+print(missing_values)
+```
+
+### Categorical variables
+
+- Country and Region
+
+The data set contains data about a total of 179 countries. Each country is assigned to a region, with 9 different regions given by: "Africa", "Asia", "Oceania", "Middle East", "European Union", "Rest of Europe", "South America", "North America" and "Central America and Caribbean". We preferred to unify "European Union" and "Rest of Europe" so to obtain a single region representing the whole of Europe.
+
+
+```{r}
+df <- df %>%
+  mutate(Region = ifelse(Region %in% c("Rest of Europe", "European Union"), "Europe", Region))
+
+unique(df$Region)
+```
+
+With this new region, the distribution of the 179 countries is given by: 51 countries in Africa, 42 in Europe, 27 in Asia, 19 in Central America and the Caribbean, 14 in the Middle East, 12 in South America, 11 in Oceania and 3 in North America. We visualize this information thanks to a pie chart. Then using a bar plot it is possible to see the distribution of "observed countries" among the regions. Africa and Europe have much more information than the other regions.
+
+```{r}
+# Count the number of countries per region
+countries_count <- df %>%
+  group_by(Region) %>%
+  summarize(CountriesPresent = n_distinct(Country))
+
+countries_count <- countries_count %>%
+  arrange(desc(CountriesPresent))
+
+print(countries_count)
+
+# Visualizing the countries in the data set
+
+ggplot(countries_count, aes(x = " ", y = CountriesPresent, fill = Region)) + 
+geom_bar(stat = "identity", width = 1) + 
+coord_polar("y") + 
+labs(title = "Distribution of Countries by Region") +
+theme_void()
+
+print(table(df$Region))
+
+
+
+ggplot(data = df, aes(x = Region)) + 
+  geom_bar(color = "black", fill = "skyblue") + 
+  coord_flip() + 
+  labs(
+    title = 'Number of observations by Region',
+    x = 'Region',
+    y = 'Number of observations'
+  ) +
+  theme_minimal() +  
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+    axis.title.x = element_text(size = 12),
+    axis.title.y = element_text(size = 12),
+    plot.margin = unit(c(0.5, 0, 1, 0), "cm")
+  ) +  
+  geom_text(stat = 'count', aes(label = after_stat(count)), 
+            hjust = 1.2, color = "black", size = 3.5)
+
+
+```
+
+
+- "Economy_Status_Developed" and Economy_status_Developing
+
+Other than by region, countries are divided also between those considered "developed" and those considered "developing" (in terms of economic factors). To avoid having two columns which give exactly the same information, only the "Economy_Status_Developed" column was left and the integers 0/1 transformed into a factor with the levels developing/developed for ease of use. The column was also renamed "Status".
+
+```{r}
+# From 0/1 to Developing/Developed
+df$Economy_status_Developed <- factor(df$Economy_status_Developed, levels = c(0, 1), labels = c("Developing", "Developed"))
+
+# Renaming the column
+colnames(df)[colnames(df) == "Economy_status_Developed"] <- "Status"
+unique(df$Status)
+
+# Removing the redundant column
+df$Economy_status_Developing <- NULL
+summary(df)
+
+# Counting developed vs developing countries
+status_count <- df %>%
+  group_by(Status) %>%
+  summarize(DevelopedCountries = n_distinct(Country))
+
+print(status_count)
+
+ggplot(status_count, aes(x = " ", y = DevelopedCountries, fill = Status)) + 
+geom_bar(stat = "identity", width = 1) + 
+coord_polar("y") + 
+labs(title = "Distribution of Countries by Status") +
+theme_void()
+
+
+```
+
+- Year 
+
+The "Year" variable represents the year in which all data have been recorded. For each country there are 16 observations for the 16 years for which we have data. We convert the variable type in categorical. 
+
+```{r}
+df$Year <- as.factor(df$Year)
+unique_levels <- levels(df$Year)
+print(unique_levels)
+
+```
+So we now have 4 categorical variables.
+
+```{r}
+categorical_columns <- c("Country", "Year", "Status", "Region")
+unique_counts <- sapply(df[categorical_columns], function(col) length(unique(col)))
+
+# Mostra i risultati
+print(unique_counts)
+```
+
+Numeric variable
+
+- Life expectancy
+
+Looking at the distribution of life expectancy we see that it is skewed to the left, many of the values are concentrated on the right side. Checking also the kurtosis we can see it is less than 3, the distribution is platykurtic.
+
+Thanks to the moments library we can apply  the jarque.test() function, which performs a goodness-of-fit test that determines whether or not sample data have skewness and kurtosis that matches a normal distribution (null hypothesis).
+The p-value < 0.05, so we can reject the null hypothesis of normality, this is not a surprise. 
+We also give a look at the mean age and the standard deviation. The distribution is mainly affected from the long tail which can be expected to be caused by the many countries in which life expectancy is lower than the mean. By looking at the density plot it is even more evident how the distribution is concentrated between 65 and 75 (years). It decreases on both sides reaching extremes around 40 and 90 years.
+
+```{r}
+hist(df$Life_expectancy, col = "peachpuff",border = "black", prob = TRUE, xlab= "Age(years)", main = "Life_expectancy distribution")
+lines(density(df$Life_expectancy),lwd = 2, col = "chocolate3")
+
+#ggplot(df,aes(x = df$Life_expectancy))+geom_histogram(fill = "blue", color = "white", bins = 40)+
+#labs(title = "Life expectancy distribution",
+#x = "Age", y = "Frequency")+
+#theme_minimal()+d <-density(x= df$Life_expectancy)+
+
+skew <- skewness(df$Life_expectancy)
+cat("Skewness", skew)
+
+kurt <- kurtosis(df$Life_expectancy) # Normal = 3
+cat("Kurtosis",kurt)
+
+jarque.test(df$Life_expectancy)
+
+
+mean(df$Life_expectancy)
+sd(df$Life_expectancy)
+
+
+#plot(density(df$Life_expectancy), main = "Life expectancy")
+```
+
+- GDP_per_capita
+
+GDP_per_capita is an economic factor and by looking at its distribution (histogram) we can see that there are mainly countries with a low GDP. There is a right tail for high GDP (right-skewed), so this is a highly positively skewed distribution. 
+We can check for statistical indices, such as mean and standard deviation, to have information on the variability. The kurtosis is much higher than 3, so this is a leptokurtic distribution, with a sharp peak and very heavy tails. 
+
+To further explore the presence of unusual GDP, we constructed a boxplot. Coherently with the histogram, the boxplot provides a visual summary of the distribution. It is very compressed and the median is very close to Q1 (asymmetric distribution). The upper whisker (Q3 + 1.5*IQR) is found at about 30.000 dollars, while the lower whisker corresponds to the lowest GPD, that is 148 dollars (Afghanistan, 2000). There are many points above the superior whisker, this is due to the heterogeneity of countries in our data set. 
+
+It could be useful to discretize this variable into a set of categories. This is done to reduce the complexity of data in order to achieve a better comparison in the bivariate analysis. The discretization has been made on the basis of the division in quantiles, with the data below Q1 being described as "low" GDP, between Q1 and Q2 as "medium-low", between Q2 and Q3 as "medium-high". For the last quantile, we decided to add a further division as grouping countries with about 10.000 dollars of GDP per capita in the same group as those with 50.000 dollars plus seemed a bit too extreme. Therefore, those between Q2 and 30.000 dollars of GDP per capita have been described as "high" GDP per capita, while those above 30.000 dollars as "very high". In our opinion, this distribution reflects adequately the different economies around the world.
+
+
+```{r}
+ggplot(df,aes(x = GDP_per_capita))+
+  geom_histogram(fill = "blue", color = "white", bins = 4)+
+labs(title = "GDP_per_capita",
+x = "GDP(USD)",y = "Frequency")+
+theme_minimal()
+
+
+
+#Statistical indexes
+mean(df$GDP_per_capita)
+sd(df$GDP_per_capita)
+skew <- skewness(df$GDP_per_capita)
+cat("Skewness", skew)
+
+kurt <- kurtosis(df$GDP_per_capita)
+cat("Kurtosis",kurt)
+
+
+
+```
+
+
+```{r}
+Q1_GDP <- quantile(df$GDP_per_capita, 0.25, na.rm = TRUE)
+median_GDP <- median(df$GDP_per_capita)
+Q3_GDP <- quantile(df$GDP_per_capita, 0.75, na.rm = TRUE)
+IQR_GDP <- Q3_GDP - Q1_GDP
+lower_bound_GDP <- Q1_GDP - 1.5 * IQR_GDP
+upper_bound_GDP <- Q3_GDP + 1.5 * IQR_GDP
+cat(paste("GDP Lower bound:", lower_bound_GDP, "\nGDP Upper bound:", upper_bound_GDP))
+cat(paste("GDP Q1:", Q1_GDP, "\nGDP median:", median_GDP, "\nGDP Q3:", Q3_GDP))
+
+ggplot(data = df, aes( y = GDP_per_capita )) +
+geom_boxplot(color = "black", fill = "skyblue", width = 0.5) +
+theme_minimal() +
+theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+axis.title.y = element_text(size = 12),
+axis.text = element_text(size = 10))
+```
+```{r}
+#Discretizing
+df$GDP_discretized <- cut(df$GDP_per_capita,
+breaks = c(0, Q1_GDP, median_GDP, Q3_GDP, 30000, max(df$GDP_per_capita)),labels = c("low", "medium-low", "medium-high", "high", "veryhigh")) # conversion in categories
+```
+
+```{r}
+str(df)
+```
+
+
+- Infant deaths, under five years old mortality, adult mortality
+
+The distributions for infant deaths and under five years old mortality are very similar, this suggested to us that they could be correlated and one of them could be removed. We preferred to defer this decision to the bivariate analysis in the next paragraph. Most of the data falls in the [0;50] interval (0 to 50 deaths for every 1000 infants/under five years old), with a strong peak in this interval. The adult mortality rate is characterized by a wider peak, with most of the values in the [0;300] deaths per 1000 individuals interval. 
+The infant and the under_5 distribution have very similar skewness, but the second distribution has a slightly higher kurtosis, indicating an heavier tail.
+
+```{r}
+# means and standard deviations for mortality related variables
+means_sds_mortality <- list("mean_infant" = mean(df$Infant_deaths), "sd_infant" = sd(df$Infant_deaths), "mean_under5" = mean(df$Under_five_deaths), "sd_under5" = sd(df$Under_five_deaths), "mean_adult" = mean(df$Adult_mortality), "sd_adult" = sd(df$Adult_mortality) )
+
+means_sds_mortality
+
+#histograms of the mortality variables
+plot_infant <- ggplot(df, aes(Infant_deaths)) + geom_histogram( fill= "lightblue", binwidth = 8) + theme_classic() + labs(x = "Infant mortality rate", title = "Infant mortality rate distribution")
+plot_under5<-ggplot(df, aes(Under_five_deaths)) + geom_histogram( fill= "orange", binwidth = 8) + theme_classic() + labs(x = "Under five mortality rate", title = "Under five mortality rate distribution")
+plot_adult<-ggplot(df, aes(Adult_mortality)) + geom_histogram( fill= "purple", binwidth = 8) + theme_classic() + labs(x = "Adult mortality rate", title = "Adult mortality rate distribution")
+infant_under5 <- plot_infant + plot_under5
+infant_under5
+
+plot_adult
+
+
+skew <- skewness(df$Infant_deaths)
+kurt <- kurtosis(df$Infant_deaths)
+
+cat("Skewness_infant  ", skew, "  ")
+cat("Kurtosis_infant  ",kurt, "  ")
+
+skew <- skewness(df$Adult_mortality)
+kurt <- kurtosis(df$Adult_mortality)
+
+cat("Skewness_adult  ", skew, "  ")
+cat("Kurtosis_adult  ",kurt, "  ")
+
+skew <- skewness(df$Under_five_deaths)
+kurt <- kurtosis(df$Under_five_deaths)
+
+cat("Skewness_under5  ", skew, "  ")
+cat("Kurtosis_under5  ",kurt)
+
+```
+
+- Hepatitis B, Polio, Diphtheria, Measles
+
+
+The distributions of vaccines rate at 1 year of age show a strong similarity between the rates for Hepatitis B, Polio and Diphtheria vaccines, while the Measles vaccine distribution is quite different. We therefore expect three of these four variables to be strongly correlated, likely these vaccines are often administered together and therefore children who have one of them will also have the other two. The similarity with Measles vaccination seems to be less strong. In any case, all of them show a strong peak around higher percentages ,so with most countries having very high rates of vaccination against these diseases. This variables reflect an immunization factor.
+Hepatitis B, Polio, and Diphtheria all show strong negative skewness and heavy tails, with Diphtheria showing the most pronounced deviations, while Measles displays a relatively more normal-like distribution.
+
+```{r}
+# means and standard deviations for variables covering the vaccination rate of Hepatitis B, Measles, Polio, Diphtheria
+means_sds_diseases <- list("mean_Hepatitis" = mean(df$Hepatitis_B), "sd_Hepatitis" = sd(df$Hepatitis_B), "mean_Measles" = mean(df$Measles), "sd_Measles" = sd(df$Measles), "mean_Polio" = mean(df$Polio), "sd_Polio" = sd(df$Polio), "mean_Diphteria" = mean(df$Diphtheria), "sd_Diphteria" = sd(df$Diphtheria) )
+
+means_sds_diseases
+
+plot_Hepatitis_B <- ggplot(df, aes(Hepatitis_B)) + geom_histogram( fill= "lightblue", binwidth = 4) + theme_classic() + labs(x = "Hepatitis B vaccine percentage at 1 year of age", title = "Hepatitis B vaccine distribution")
+plot_Measles <- ggplot(df, aes(Measles)) + geom_histogram( fill= "blue", binwidth = 4) + theme_classic() + labs(x = "Measles vaccine percentage at 1 year of age", title = "Measles vaccine distribution")
+plot_Polio <- ggplot(df, aes(Polio)) + geom_histogram( fill= "lightblue", binwidth = 4) + theme_classic() + labs(x = "Polio vaccine percentage at 1 year of age", title = "Polio vaccine distribution")
+plot_Diphtheria <- ggplot(df, aes(Diphtheria)) + geom_histogram( fill= "blue", binwidth = 4) + theme_classic() + labs(x = "Diphteria vaccine percentage at 1 year of age", title = "Diphteria vaccine distribution")
+
+Hepatitis_Measles <- plot_Hepatitis_B + plot_Measles
+Polio_Diphtheria <- plot_Polio + plot_Diphtheria
+
+Hepatitis_Measles
+Polio_Diphtheria
+
+
+skew <- skewness(df$Hepatitis_B)
+kurt <- kurtosis(df$Hepatitis_B)
+
+cat("Skewness_Hepatitis_B", skew, "  ")
+cat("Kurtosis_Hepatitis_B",kurt, "  ")
+
+skew <- skewness(df$Polio)
+kurt <- kurtosis(df$Polio)
+
+cat("Skewness_Polio", skew, "  ")
+cat("Kurtosis_Polio",kurt, "  ")
+
+
+skew <- skewness(df$Measles)
+kurt <- kurtosis(df$Measles)
+
+cat("Skewness_Measles", skew, "  ")
+cat("Kurtosis_Measles",kurt, "  ")
+
+skew <- skewness(df$Diphtheria)
+kurt <- kurtosis(df$Diphtheria)
+
+cat("Skewness_Diphtheria", skew, "  ")
+cat("Kurtosis_Diphtheria",kurt)
+
+```
+
+- Thinness_five_nine_years and Thinness_ten_nineteen_years
+
+The variables Thinness_five_nine_years and Thinness_ten_nineteen_years report the percentage of the populations whose BMI is lower than two standard deviations from the mean of the BMI values in the country (thinness < mean - 2*sd). Thinness is, in the WHO terminology, worse than underweight. Therefore, it is an indicator of very low weight and has been correlated with a higher incidence of various kinds of disease. The two thinness variables have a very close distribution. Thinness prevalence quickly decreases after the ten percentage points mark, however there is a sizable number of countries with a thinness percentage close to 10%, which shows that food is still a problem in many places of the world.
+
+```{r}
+means_sds_thinness <- list("mean_five_nine" = mean(df$Thinness_five_nine_years), "sd_five_nine" = sd(df$Thinness_five_nine_years), "mean_ten_nineteen" = mean(df$Thinness_ten_nineteen_years), "sd_ten_nineteen" = sd(df$Thinness_ten_nineteen_years))
+
+means_sds_thinness
+
+plot_five_nine <- ggplot(df, aes(Thinness_five_nine_years)) + geom_histogram( fill= "lightblue", binwidth = 2) + theme_classic() + labs(x = "Thinness between five and nine years old", title = "Thinness - five to nine years old")
+plot_ten_nineteen <- ggplot(df, aes(Thinness_ten_nineteen_years)) + geom_histogram( fill= "blue", binwidth = 2) + theme_classic() + labs(x = "Thinness between ten and nineteen years old", title = "Thinness - ten to nineteen years old")
+
+Thinness_plots <- plot_five_nine + plot_ten_nineteen
+Thinness_plots
+
+skew <- skewness(df$Thinness_five_nine_years)
+kurt <- kurtosis(df$Thinness_five_nine_years)
+
+
+skew <- skewness(df$Thinness_ten_nineteen_years)
+kurt <- kurtosis(df$Thinness_ten_nineteen_years)
+
+cat("Skewness_adult", skew, "  ")
+cat("Kurtosis_adult",kurt, "  ")
+
+cat("Skewness_adult", skew, "  ")
+cat("Kurtosis_adult",kurt)
+```
+
+- BMI
+
+
+Thinness among children and teens informed us that there are still countries in which food access is not fully guaranteed. The BMI distribution however tells us that the mean BMI is actually a tad bit over the normal weight zone (defined as the interval between 18,5 and 24,99), suggesting that there are some nations whose BMI is high enough to completely counterbalance the low values characterizing many poorer nations.
+
+```{r}
+mean_sd_BMI <- list("mean_BMI" = mean(df$BMI), "sd_BMI" = sd(df$BMI))
+mean_sd_BMI
+
+boxplot_BMI <- ggplot(df, aes(BMI)) + geom_boxplot(fill = "lightgreen", color = "black") + theme_classic() + labs(x = "BMI")
+
+boxplot_BMI
+```
+
+- Schooling
+
+The Schooling variable gives a social information, in particular for people aged 25+, which could be correlated with economical factors and maybe have an effect on life expectancy. We first calculated the minimum and maximum values which were found to be 1.1 years and 14,1 years. We can visualize the distribution using an histogram. The histogram highlighted that there is a certain heterogeneity. 
+
+```{r}
+min_years <- min(df$Schooling)
+max_years <- max(df$Schooling)
+cat(paste("The minimum number of years at school is:", min_years, "\nThe maximum number of years at school is:", max_years))
+
+ggplot(df,aes(x = Schooling))+
+  geom_histogram(fill = "blue", color = "white", bins = 15
+                 )+
+labs(title = "Schooling",
+x = "Schooling (years)",
+y = "Frequency")+
+theme_minimal()
+
+ggplot(df, aes(x = "", y = Schooling)) +
+  geom_violin(fill = "purple", color = "black") +  # Violin plot
+  geom_boxplot(width = 0.1, fill = "white", outlier.color = "red", outlier.size = 2) +  # Boxplot sovrapposto al violin plot
+  labs(title = "Schooling Distribution", x = "", y = "Schooling (years)") +
+  theme_minimal()
+
+ggplot(df, aes(x = "", y = Schooling)) +
+  geom_boxplot(fill = "lightblue", outlier.color = "red", outlier.size = 2) +  # Boxplot normale
+  labs(title = "Schooling Boxplot", x = "", y = "Schooling (years)") +
+  theme_minimal()
+
+kurtosis(df$Schooling)
+summary(df$Schooling)
+sd(df$Schooling)
+
+
+
+```
+
+- Alcohol_consumption 
+
+This variable gives information on the consumption in liters of pure alcohol. There is a certain asymmetry (positive) in the distribution which is skewed right and the kurtosis is less than 3 (slightly platykurtic). The mean is at about 4.8 liters of pure alcohol, with a substantial sd of 4.
+
+```{r}
+
+ggplot(df,aes(x = Alcohol_consumption))+
+  geom_histogram(fill = "blue", color = "white", bins = 10
+                 )+
+labs(title = "Alcohol consumption",
+x = "Alcohol Consumption(l)",
+y = "Frequency")+
+theme_minimal()
+
+skewness(df$Alcohol_consumption)
+kurtosis(df$Alcohol_consumption)
+mean(df$Alcohol_consumption)
+sd(df$Alcohol_consumption)
+```
+To further explore the distribution we can visualize it with a violin plot combined with a box plot. Most countries seem to have a consumption between 4 and 8 liters pro capita. The red point is an outlier that could represent an anomaly in terms of cultural and economics factors.
+```{r}
+ggplot(df, aes(x = "", y = Alcohol_consumption)) +
+  geom_violin(fill = "purple", color = "black") +
+  geom_boxplot(width = 0.1, fill = "white", outlier.color = "red", outlier.size = 2)+ 
+  labs(title = "Alcohol Consumption", x = "", y = "Consumption (liters)") +
+  theme_minimal()
+```
+
+- Incidents of HIV
+
+The variable Incidents_HIV tells us the average incidence of HIV per 1000 people aged between 15 and 49 years old. The histogram shows us that the data are strongly peaked around very low values, with a mean incidence of around 0,9 cases per 1000 individuals. This suggests that from a global perspective HIV doesn't have a very large impact anymore, while it may still be a problem for specific countries.
+
+```{r}
+mean_sd_HIV <- list("mean_HIV" = mean(df$Incidents_HIV, "sd_HIV" = sd(df$Incidents_HIV)))
+mean_sd_HIV
+
+plot_HIV <- ggplot(df, aes(Incidents_HIV)) + geom_histogram(fill = "red", bins = 50) + theme_classic() + labs(x = "HIV incidence")
+boxplot_HIV <- ggplot(df, aes(Incidents_HIV)) + geom_boxplot(fill = "red", color = "black") + theme_classic() + labs(x = "HIV incidence")
+
+violin_boxplot_HIV <- ggplot(df, aes(x = "", y = Incidents_HIV)) +
+  geom_violin(fill = "purple", alpha = 0.7) +  
+  theme_classic() +
+  labs(y = "HIV incidence", x = "") +
+  ggtitle("Violin of HIV Incidence")
+
+boxplot_HIV
+plot_HIV
+violin_boxplot_HIV
+```
+
+
+## Bivariate Analysis between Quantitative Variables
+
+In order to analyze the relationship between the quantitative variables in the data set, we considered a subset of all the numerical values and then we calculated a correlation matrix. We have chosen the Spearman correlation method because it is a non-parametric measure that does not assume a linear relationship between variables and does not assume normality of each variable; it is also less sensible to outliers. The correlation matrix is visualized with a heatmap, making it easy to understand the relationships between the variables and their direction: positive correlations are indicated by red, negative correlations by blue, and no correlation at all by white. The correlation values are also printed directly on the heatmap to have a clearer understanding of it. 
+
+```{r}
+
+numeric_df <- select_if(df, is.numeric)
+#cor_mat <- cor(numeric_df, method = "spearman") 
+cor_mat <- cor(numeric_df, use = "complete.obs", method = "spearman")
+print("Matrice di correlazione (Spearman):")
+print(cor_mat)
+
+ggcorrplot(cor_mat, 
+           title = "Heatmap of Correlation Matric (Spearman method)", 
+           lab = TRUE,         
+           lab_size = 2,       
+           tl.cex = 8,          
+           tl.srt = 45,        
+           colors = c("blue", "white", "red")) +
+  theme(plot.title = element_text(size = 12), 
+        axis.text.x = element_text(size = 5), 
+        axis.text.y = element_text(size = 5))
+```
+
+The heat map highlights significant relationships between the numerical variables. Life expectancy seems to be very highly correlated with Schooling, GDP_per_capita (positively), Adult_mortality, Infant_deaths and Under_five_deaths (negatively).  A variable like population_mln hasn't any relevant correlation with all the other numerical variables. Others show perfect correlation between them like Under_five_deaths and Infant_deaths (corr : 1). Also Adult_mortality show a very high correlation with Under_five_deaths and Infant_deaths. Thinness_ten_nineteen_years and Thinness_five_nine_years also show a very high correlation between them (0.95). Polio and Diptheria: 0.95. All these relations could introduce multi collinearity. There may be a redundancy of information, which we will discuss later.
+
+In a first approach we can visualize with a scatter plot matrix, the relationship between the numerical variables. In particular we are focused in the relationship of variables with life expectancy. We first plot the social/economic variables and then the health ones. 
+
+```{r}
+social_factors <- df[, c("Life_expectancy", "GDP_per_capita","Schooling","Adult_mortality","Alcohol_consumption","BMI")]
+
+pairs(social_factors, 
+      main = "Scatterplot Matrix of social/economic factors",
+      col = "blue", 
+      pch = 20)
+
+
+
+
+health_factors <- df[,c("Life_expectancy","Polio","Hepatitis_B","Measles","Incidents_HIV")]
+
+pairs(health_factors,
+      main = "Scatterplot Matrix of health factors",
+      col = "blue", 
+      pch = 20)
+
+```
+
+We can then visualize better some scatterplot and specific relationship.
+
+There is a very high positive correlation (0.85) between Life_expectancy and GDP_per_capita: countries with higher GDP per capita have more resources to invest in healthcare infrastructure and medical care. For countries with a lower GDP per capita, the life expectancy may vary very much, with a broad range that goes from 40 to 80 years. Countries with a high GDP per capita have life expectancy levels consistently over 75 years.
+
+There is a positive correlation between bmi and life expectancy (0.58). Countries with higher life expectancy have slightly higher than average BMI levels. However, there's a big scatter particularly at higher BMI values, so other factors may influence this correlation.
+
+There is a high correlation between Schooling and life expectancy (0.74). This highlights that countries with higher life expectancy tend to have greater schooling overall. There's still some variability that suggest that while education and longevity may be correlated, other factors may influence this relationship. Some outliers are visible especially where schooling levels deviate despite similar life expectancy.
+
+It is also clear to observe  the negative correlation between life expectancy and adult mortality.
+
+```{r}
+p10 <- ggplot(df, aes(GDP_per_capita,Life_expectancy )) + geom_point( color= "steelblue" ) +
+labs(title = "Life_expectancy vs GDP_per_capita", subtitle = "Scatterplot", x = "GDP (USD)") + theme_classic()
+
+
+p11 <- ggplot(df, aes(BMI,Life_expectancy )) + geom_point( color= "steelblue" ) +
+labs(title = "Life_expectancy vs BMI ", subtitle = "Scatterplot") + theme_classic()
+
+p12 <- ggplot(df, aes(x = Schooling, y = Life_expectancy)) +
+  geom_point(color = "steelblue") +
+  geom_smooth(method = "lm", color = "red", se = TRUE) +
+  labs(title = "Life Expectancy vs Schooling (Years)",
+    subtitle = "Scatterplot with Regression Line",
+    x = "Schooling(Years)",
+    y = "Life expectancy") +
+  theme_light()
+
+
+p13 <- ggplot(df, aes(Adult_mortality,Life_expectancy )) + geom_point( color= "steelblue" ) +geom_smooth(method = "lm", color = "red", se = TRUE)+
+labs(title = "Life_expectancy vs Adult Mortality ", subtitle = "Scatterplot") + theme_classic()
+
+(p10+p11)/ (p12 + p13)
+
+```
+
+We then show the relationship between life expectancy and the immunization factors. 
+
+The regression line indicates a positive linear trend, so countries with higher life expectancy tend to have higher polio vaccination coverage, even though there's a wide spread of data points that shows the variability in vaccination rates among countries with similar longevity.
+Life expectancy increases if Hepatitis B immunization rates are higher. So, countries with higher life expectancy are more successful in the implementation of vaccination programs, as expected. Some countries, though, deviate from this trend, as shown by the dispersion; moreover, outliers are present and may indicate that still this relationship may be influenced by other factors too. 
+Countries with higher life expectancy are more likely to have higher measles vaccination rate, as shown by the regression line. There are some clustering of points at specific vaccination levels, like around 75%, that may highlight the improvement of longevity thanks to these health policies.
+The fourth scatterplot shows a quite negative linear correlation (-0.61). Higher incidents of HIV reflect a low level of life expectancy.
+
+```{r}
+p1 <- ggplot(df, aes(x = Polio, y = Life_expectancy)) +
+  geom_point(color = "brown") +
+  geom_smooth(method = "lm", color = "black", se = TRUE) +
+  labs(title = "Life Expectancy vs Polio",
+    x = "Polio",
+    y = "Life Expectancy") +
+  theme_light()
+
+
+p2 <- ggplot(df, aes(x = Hepatitis_B, y = Life_expectancy)) +
+  geom_point(color = "brown") +
+  geom_smooth(method = "lm", color = "black", se = TRUE) +
+  labs(title = "Life Expectancy vs Hepatitis B",
+    x = "Hepatitis B",
+    y = "Life Expectancy") +
+  theme_light()
+
+
+p3 <- ggplot(df, aes(x = Measles , y = Life_expectancy)) +
+  geom_point(color = "brown") +
+  geom_smooth(method = "lm", color = "black", se = TRUE) +
+  labs(title = "Life Expectancy vs Measles",
+    x = "Measles",
+    y = "Life Expectancy") +
+  theme_light()
+
+
+
+p4 <- ggplot(df, aes(x = Incidents_HIV , y = Life_expectancy)) +
+  geom_point(color = "brown") +
+  geom_smooth(method = "lm", color = "black", se = TRUE) +
+  labs(title = "Life Expectancy vs HIV incidents",
+    x = "Incidents_HIV",
+    y = "Life Expectancy") +
+  theme_light()
+
+
+(p1 + p2) / (p3 + p4) 
+```
+
+We then checked with other scatterplot the relationship between Adult_mortality and some social/health factors. Keeping in mind that adult mortality has a strong negative correlation with life expectancy (-0.96)
+
+There is a positive correlation (0.55) between adult mortality and thinness_ten_nineteen. This could maybe be related to personal diseases related with thinness.There is a high negative correlation between bmi and adult mortality (0.58). Increasing BMI  lead to a lower adult_mortality rate.
+The third plot, although with enough variability, seems to show that alcohol consumption decreases as the mortality in adults increases. Surprisingly there is not correlation between this two variables. There is a positive correlation (0.65) between incidents of HIV and adult mortality, since people affected by this disease have higher probability of dying younger.
+
+```{r}
+
+p4 <- ggplot(df, aes(Thinness_ten_nineteen_years,Adult_mortality )) + geom_point( color= "steelblue" ) +
+labs(title = "Adult_mortality vs Thinness_ten_nineteen ", subtitle = "Scatterplot") + theme_classic()
+
+
+p5 <- ggplot(df, aes(BMI, Adult_mortality )) + geom_point( color= "steelblue" ) +
+labs(title = "BMI vs Adult_mortality ", subtitle = "Scatterplot") + theme_classic()
+
+
+p6 <- ggplot(df, aes(x = Alcohol_consumption, y = Adult_mortality)) +
+  geom_point(color = "steelblue") +
+  
+  labs(title = "Adult Mortality vs Alcohol Consumption",
+    x = "Adult Mortality",
+    y = "Alcohol Consumption") +
+  theme_light()
+
+
+p7 <- ggplot(df, aes(Incidents_HIV,Adult_mortality )) + geom_point( color= "steelblue" ) +
+labs(title = "Adult_mortality vs Incidents_HIV ", subtitle = "Scatterplot") + theme_classic()
+
+
+
+(p4 + p5) / (p6 + p7) 
+
+```
+
+
+
+## Bivariate Analysis between Qualitative Variables
+
+- Region vs Status
+
+In order to explore the relationship between regions and status of the country (developed or developing), we have used a contingency table, that summarizes the counts of observations for combinations of these variable, allowing us to compare the number of Developed and Developing countries for each region.
+
+```{r}
+contingency_table <- table(df$Region, df$Status)/16
+print(contingency_table)
+```
+
+The chi-square test is a statistical test used to determine if there is a significant association between two categorical variables.
+It evaluates whether the observed frequencies (counted in the contingency table) differ significantly from what we would expect if the two variables were independent.
+The null hypothesis H0 states that there is no association between Region and Status (Developed or Developing), meaning the development status of a country is not influenced by its region, and any observed differences are purely due to random chance, while the alternative Hypothesis H1 states that the development status is related to the region.
+
+```{r}
+chi_test <- chisq.test(contingency_table)
+print(chi_test)
+```
+
+Since the p-value is far below a typical significance threshold (0.05), we reject the null hypothesis and conclude that there is a statistically significant association between Region and Status.
+
+```{r}
+df %>%
+  group_by(Region, Status) %>%
+  summarise(Count = n(), .groups = "drop") %>%  # Add .groups = "drop" to avoid warning
+  ggplot(aes(x = Region, y = Count, fill = Status)) +
+  geom_bar(stat = "identity", position = "stack") +
+  theme_minimal() +
+  labs(title = "Distribution of Status Across Regions", x = "Region", y = "Count") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+```{r}
+melted_table <- melt(contingency_table)
+
+ggplot(melted_table, aes(x = Var2, y = Var1, fill = value)) +
+  geom_tile() +
+  geom_text(aes(label = value)) +
+  scale_fill_gradient(low = "white", high = "blue") +
+  theme_minimal() +
+  labs(title = "Heatmap of Region vs. Status", x = "Status", y = "Region")
+```
+
+Both the heat map and the bar chart highlights that several regions, such as Africa, Central America and Caribbean and South America have no developed countries. On the other hand, Europe has the highest number of developed countries.
+
+## Bivariate Analysis between Quantitative and Qualitative variables 
+
+To analyze the relationships between quantitative and qualitative variables, we employed the ANOVA (Analysis of Variance) test. This statistical method allowed us to compare the means of a quantitative variable (dependent) across the various categories of a qualitative variable (independent) to determine whether any statistically significant differences exist. Specifically, ANOVA helps assess if variations in the quantitative variable are attributable to differences between groups rather than random variation. We used the anova_test function to perform the ANOVA test. It is also applied Tukey's HSD to understand more after ANOVA. It is a post-hoc procedure, also called as multiple comparisons, by comparing the mean groups 2 by 2. We also check for partial eta-squared that give information on the variance of the dependent variable explained by the independent variable, but taking into account other model factor effects.  We also generated a 95% family-wise confidence level to see the difference in pairs of group and a box plot to visualize the distribution of the quantitative variable among different groups of qualitative variable.
+
+```{r}
+deviance = c("Between","Within")
+Df = c("g-1","n-g")
+SS = c("SSB","SSW")
+MS = c("MSB = SSB/Df", "MSW = SSW/Df")
+F_value = c("MSB/MSW", NA)
+p_value = c("p", NA)
+
+output <- cbind(deviance, Df, SS, MS, F_value, p_value)
+output
+
+anova_test <- function(num_col, group_col, rotation = FALSE, alpha = 0.05) {
+  # Converte il gruppo in fattore
+  df[[group_col]] <- as.factor(df[[group_col]])
+  
+  model <- lm(paste(num_col, "~", group_col), data = df)
+  anova_result <- anova(model)
+  
+  # Output ANOVA
+  cat("\n********************* ANOVA", group_col, "-", num_col, "*********************\n")
+  print(format(anova_result, digits = 6, justify = "left"))
+  
+ 
+  SSB <- anova_result$"Sum Sq"[1]
+  SSW <- anova_result$"Sum Sq"[2]
+  eta_squared <- SSB / (SSB + SSW)
+  cat("\nEffect Size (partial eta-squared):", eta_squared, "\n")
+  
+
+  p_value <- anova_result[["Pr(>F)"]][1]
+  if (!is.na(p_value) && p_value < alpha) {
+    tukey_result <- TukeyHSD(aov(model))
+    cat("\n********************* Tukey's HSD Test", group_col, "-", num_col, "**************\n")
+    print(tukey_result)
+    plot(tukey_result)
+  } else {
+    cat("\nThe p-value is not less than the significance level. Tukey's HSD Test not performed.\n")
+  }
+  
+ 
+  cat("\n********************* Boxplot", group_col, "-", num_col, "*********************\n")
+  boxplot_plot <- ggplot(df, aes(x = !!sym(group_col), y = !!sym(num_col), fill = !!sym(group_col))) +
+    geom_boxplot(show.legend = FALSE) +
+    labs(
+      title = paste("Boxplot of", num_col, "by", group_col),
+      x = paste(group_col, "(Categories)"),
+      y = paste(num_col, "(years)")
+    ) +
+    scale_fill_brewer(palette = "Set3") + 
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(
+        angle = ifelse(rotation, 45, 0),
+        hjust = ifelse(rotation, 1, 0.5),
+        size = 10
+      ),
+      axis.text.y = element_text(size = 10),
+      plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+      plot.margin = grid::unit(c(0.5, 0.5, 0.5, 0.5), "cm")
+    )
+  
+  print(boxplot_plot)
+  
+  return(model) 
+}
+```
+
+We applied anova_test function to check if there are significant differences in Life expectancy across different region. The results show a relation between these variables : F-value = 585.35 and p-value = 0 < 0.05 (greater than the significance level so is rejected the null hypothesis of equal mean across the different groups). The effect of region given by partial eta-squared, says that the variance in life expectancy can be explained by differences between the origin region. The Tukey’s HSD test,let us see that most region pairs exhibit significant life expectancy differences. From the box-plot Africa is the region with the lowest life expectancy, although is the one with highest variability (whiskers are very large).
+North America and European union have the highest life expectancy in terms of their median, but Europe has a a larger interquartile range. Middle east, Central America and Caribbean, South America don't show significant differences between them and have very narrow box-plots, although the presence of some outliers.
+
+```{r}
+model1 <- anova_test("Life_expectancy", "Region", rotation = TRUE, alpha = 0.05)
+
+#Checking ANOVA test assumptions
+par(mfrow = c(1, 2))
+
+hist(resid(model1))
+qqnorm(resid(model1))
+qqline(resid(model1))
+
+shapiro.test(resid(model1))
+
+leveneTest(Life_expectancy ~ Region, data = df)
+
+durbinWatsonTest(model1)
+
+```
+
+However, our model is reliable when the assumption are satisfied: normality of the errors, omoscedasticity, independence of the errors.
+Normality and omoscedasticty are not satisfied. We applied Shapiro-Wilk normality test and although W is close to one, the p-value is much less than 0.05 so the null hypothesis should be rejected. We also checked homogeneity of variance between groups with Levene's test but the null hypothesis is rejected.
+Indeed, using durbinWatsonTest we check that there is not autocorrelation between residuals (independence test).
+
+As an alternative to ANOVA test, we use a non-parametric test like Kruskal-Wallis test to verify differences between medians of groups. This test is generally used when is not satisfied normality in distribution and equal variance in the residuals of the model. The output says that the null hypothesis is rejected: there are difference between medians of groups.
+
+```{r}
+# Executing Kruskal-Wallis test
+kruskal_result <- kruskal.test(Life_expectancy ~ Region, data = df)
+
+print(kruskal_result)
+
+```
+
+We can also have a different view about the distribution of life expectancy among the all countries of the dataset, thanks to an interactive plot.
+
+```{r}
+
+# ISO3 code for countries
+if (!requireNamespace("countrycode", quietly = TRUE)) install.packages("countrycode")
+df$iso_alpha <- countrycode(df$Country, origin = "country.name", destination = "iso3c")
+
+fig <- plot_ly(
+  data = df,
+  type = "choropleth", 
+  locations = ~iso_alpha,
+  z = ~Life_expectancy,
+  text = ~paste("Country:", Country, "<br>Life Expectancy:", Life_expectancy), 
+  colorscale = "Viridis", 
+  colorbar = list(title = "Life Expectancy")
+)
+
+
+fig <- fig %>%
+  layout(
+    title = "Life Expectancy per Country",
+    geo = list(
+      showframe = FALSE, 
+      showcoastlines = TRUE,
+      projection = list(type = "natural earth") 
+    )
+  )
+
+# Showing the graph
+fig
+```
+
+We can also apply the anova_test function to check if there are differences between life expectancy depending on the status of countries. Once seen that normality (Shapiro-Wilk test) and homogeneity of variance (Levene's test) are not satisfied we go for another test. We still used the non-parametric  Kruskal-Wallis test. P-value is < 0.05 so there is a significative difference in the median of life expectancy for developed and non developed countries. We finally appreciate better this with a box-plot that let us understand developed countries have an higher life expectancy (79 vs 69 in developing). The whisker of the developed box-plot are shorter than the ones of developing countries, there is also a certain homogeneity inside this class. The partial eta-squared is 0.27, a value which still states how the independent variable (Status) has an effect on explaining the variability of life expectancy.
+
+```{r}
+model2 <- anova_test("Life_expectancy","Status")
+#Checking ANOVA test assumptions
+par(mfrow = c(1, 2))
+
+hist(resid(model2))
+qqnorm(resid(model2))
+qqline(resid(model2))
+
+shapiro.test(resid(model2))
+
+leveneTest(Life_expectancy ~ Region, data = df)
+
+durbinWatsonTest(model2)
+
+
+kruskal.test(Life_expectancy ~ Status, data = df)
+```
+
+```{r}
+df$iso_alpha <- countrycode(df$Country, origin = "country.name", destination = "iso3c")
+
+df$value <- ifelse(df$Status == "Developed", 1, 0)
+
+fig <- plot_ly(
+  data = df,
+  type = "choropleth",
+  locations = ~iso_alpha,
+  z = ~value,
+  text = ~paste("Country:", Country, "<br>Category:", Status),
+  colorscale = list(c(0, 1), c("red", "blue")), 
+  colorbar = list(title = "Category"),
+  showscale = TRUE
+)
+
+fig <- fig %>%
+  layout(
+    title = "World Map: Developed vs Developing Countries",
+    geo = list(
+      showframe = FALSE,
+      showcoastlines = TRUE,
+      projection = list(type = "natural earth")
+    )
+  )
+
+fig
+```
+
+Our data set contains a time information and we want to check if life expectancy has changed during years. We tried again ANOVA but had to turn on Krusk-Wallis due to unsatisfied assumptions. The test suggests that the null-hypothesis should be rejected, therefore there is an effect of the years on the target variable. The partial eta-squared measure has a small effect (its value is 0.03), this says that the variability of life expectancy due to years is not much influenced. We can see this in a box-plot.
+
+```{r}
+
+model3 <- anova_test("Life_expectancy","Year")
+
+#Checking ANOVA test assumptions
+par(mfrow = c(1, 2))
+
+hist(resid(model3))
+qqnorm(resid(model3))
+qqline(resid(model3))
+
+shapiro.test(resid(model3))
+
+
+leveneTest(Life_expectancy ~ Year, data = df)
+
+durbinWatsonTest(model2)
+
+kruskal.test(Life_expectancy ~ Year, data = df)
+```
+
+We want to check if in the two extreme years 2000 and 2015 there are any significative difference for life expectancy. A box-plot shows how the median doesn't increase a lot, but the width is narrower. It is possible that some countries increased a lot their life expectancy. It is possible to apply a paired t-test to check these hypothesis. We also checked for the assumption of normality of the differences of the paired samples with Shapiro-Wilk test.
+
+```{r}
+
+df$Year <- as.numeric(as.character(df$Year))
+
+
+df_filtered <- df %>% 
+  filter(Year >= 2000 & Year <= 2015) %>%
+  filter(!is.na(Life_expectancy)) %>% 
+  group_by(Year) %>%                    
+  summarise(Average_Life_Expectancy = mean(Life_expectancy)) 
+
+ggplot(df_filtered, aes(x = Year, y = Average_Life_Expectancy)) +
+  geom_line() +                            
+  ggtitle("Average Life Expectancy Around the World (2000-2015)") + 
+  xlab("Years") +                          
+  ylab("Life Expectancy") +                 
+  theme_minimal()    
+
+
+
+selected_years <- c(2000, 2015)
+df_filtered <- df[df$Year %in% selected_years, ]
+
+ggplot(df_filtered, aes(x = factor(Year), y = Life_expectancy)) +
+  geom_boxplot(fill = "brown", color = "black") +
+  labs(title = "Life expectancy in 2000, 2008 and 2015",
+       x = "Year",
+       y = "Average Years") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+    axis.text.x = element_text(size = 12),
+    axis.text.y = element_text(size = 12)
+  ) +
+  scale_x_discrete(breaks = selected_years) # Mantiene solo i tick definiti
+
+
+t.test(df$Life_expectancy[df$Year == 2000], df$Life_expectancy[df$Year == 2015], paired = TRUE)
+
+
+# Differences between paired samples 
+differences <- subset(df, Year == 2000)$Life_expectancy - 
+              subset(df, Year == 2015)$Life_expectancy
+shapiro.test(differences)
+
+```
+ 
+Normality is guaranteed (p-value > 0.05), so the t-test is reliable. The p-value is < 0.05 so we can reject the null hypothesis of no difference in mean of the 2 groups. The mean difference says that life expectancy is 5.10 years higher than in 2000.
+
+We want to analyze which country has been more affected by incidents of HIV. 
+
+```{r}
+HIV_by_region <- df %>%
+  group_by(Region) %>% 
+  summarise(mean_HIV = mean(Incidents_HIV, na.rm = TRUE)) %>%
+  arrange(desc(mean_HIV))
+print (HIV_by_region)
+```
+```{r}
+ggplot(HIV_by_region, aes(x = reorder(Region, -mean_HIV), y = mean_HIV, fill = Region)) +
+  geom_bar(stat = "identity", show.legend = FALSE) +
+  labs(title = "Average HIV infection rate by region",
+       x = "Region",
+       y = "Incidents of HIV") +
+  theme_minimal()
+```       
+
+As we can see, Africa is by far the most impacted region, with an average HIV rate of 2.70, as we could have imagined since HIV prevalence is historically known to be high there.
+Central America and the Caribbean and South America have the second and third highest average HIV rate.
+
+We want to see if there are differences between GDP_per_capita and Children_mortality in the countries marked as developed or developing. It has been applied the non parametric Wilcoxon rank sum test. P-values indicate a significative value to reject the null hypothesis for both the variables. We then check this in a scatterplot which shows the relation between GDP and Children_mortality, marked with Status variable. High GDP_per_capita is mostly associated to developed countries and developing to low GDP (same for adult mortality). 
+
+```{r}
+
+# U test di Mann-Whitney per GDP_per_capita
+wilcox.test(GDP_per_capita ~ Status, data = df)
+
+# U test di Mann-Whitney per Adult_mortality
+wilcox.test(Adult_mortality ~ Status, data = df)
+
+scatter_plot <- ggplot(df, aes(x = Under_five_deaths, y = GDP_per_capita, color = Status)) +
+  geom_point(size = 3, alpha = 0.8) +
+  labs(title = "Adult Mortality vs GDP per Capita", x = "Adult Mortality", y = "GDP per Capita") +
+  theme_minimal() +
+  theme(legend.position = "top")
+
+density_plot <- ggplot(df, aes(x = GDP_per_capita, fill = Status)) +
+  geom_density(alpha = 0.6) +
+  labs(title = "Density of GDP per Capita", x = "GDP per Capita", y = "Density") +
+  theme_minimal() +
+  theme(legend.position = "top")
+
+
+grid.arrange(scatter_plot, density_plot, ncol = 2)
+
+
+```
+
+We then check through a scatter plot, how life expectancy changes with schooling but now  we marked the scatters with the variable Status. It is possible to understand that in general low level of schooling are followed by a low life expectancy and this is referred to developing countries. High level of schooling means high life expectancy, and this is most for developed countries. Hence, schooling can be understood as a representation of the welfare level in the country.
+
+```{r}
+
+ggplot(df, aes(x = Schooling, y = Life_expectancy, color = Status)) +
+  geom_point(size = 3, alpha = 0.7) +  
+  labs(
+    title = "Schooling vs Life expectancy (by Status)",
+    x = "Schooling",
+    y = "Life Expectancy",
+    color = "Development Status"
+  ) +
+    theme_minimal() 
+
+```
+
+We performed a Two-way ANOVA test to verify the interaction between the two variables on life expectancy. The output of the test are significative, but the assumptions are not satisfied so the test could be unreliable. We could go with a non-parametric one for more reliability. 
+
+```{r}
+anova_interaction <- aov(Life_expectancy ~ Schooling * Status, data = df)
+summary(anova_interaction)
+```
+
+We also checked how the relationship between life expectancy and GDP_per_capita is distributed depending on the status. It is clear how almost all units with an high GDP and so life expectancy (over 70 years old) are belonging to developed status, while low GDP is mostly spread in developing countries. We can apply a test.
+
+```{r}
+
+boxplot(Life_expectancy ~ GDP_discretized, 
+        data = df, 
+        main = "Life Expectancy by GDP Categories",
+        xlab = "GDP Categories",
+        ylab = "Life Expectancy",
+        col = rainbow(length(unique(df$GDP))),
+        border = "black",
+        las = 2) 
+
+kruskal_test <- kruskal.test(Life_expectancy ~ GDP_discretized, data = df)
+
+
+print(kruskal_test)
+
+ggplot(df, aes(x = GDP_per_capita, y = Life_expectancy, color = Status)) +
+  geom_point(size = 3, alpha = 0.7) +  
+  labs(
+    title = "GDP vs Life Expectancy by Development Status",
+    x = "GDP",
+    y = "Life Expectancy",
+    color = "Development Status"
+  ) +
+    theme_minimal() 
+```
+
+We then checked the relationship between Schooling and GDP_per_capita marked by Status. A scatter plot provides us the visualization. From the shape of the scatter plot it seems that some points of very high GDP are only reached by an high level of schooling. We applied pearson correlation coefficient to understand better if there is a relation between GDP and Schooling depending on the Status. The results showed that there is a certain positive correlation (higher in developing countries), but it is not very strong. This is likely due to the non linear relationship between the variables, as the correlation computer with the spearman method shows higher value, especially in the case of developing countries.
+
+```{r}
+ggplot(data = df, aes(x = GDP_per_capita, y = Schooling, color = Status)) +
+  geom_point(size = 3, alpha = 0.7) + 
+  labs(
+    title = "Relationship between Schooling and GDP by Status",
+    x = "GDP (USD)",
+    y = "Schooling(years)"
+  ) +
+  theme_minimal() + 
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16),
+    axis.title = element_text(size = 14),
+    axis.text = element_text(size = 12)
+  )
+
+cor_developed <- cor(df$GDP_per_capita[df$Status == "Developed"], 
+                     df$Schooling[df$Status == "Developed"], 
+                     method = "pearson")
+
+cor_developing <- cor(df$GDP_per_capita[df$Status == "Developing"], 
+                      df$Schooling[df$Status == "Developing"], 
+                      method = "pearson")
+
+cat("Correlation GDP-Schooling in Developed countries:", cor_developed, "\n")
+cat("Correlation GDP-Schooling in Developing countries:", cor_developing, "\n")
+
+cor_developed <- cor(df$GDP_per_capita[df$Status == "Developed"], 
+                     df$Schooling[df$Status == "Developed"], 
+                     method = "spearman")
+
+cor_developing <- cor(df$GDP_per_capita[df$Status == "Developing"], 
+                      df$Schooling[df$Status == "Developing"], 
+                      method = "spearman")
+
+cat("Correlation GDP-Schooling in Developed countries (Spearman):", cor_developed, "\n")
+cat("Correlation GDP-Schooling in Developing countries (Spearman):", cor_developing, "\n")
+
+```
+
+## Multivariate analysis
+
+We want to study how life expectancy changes in the different regions during the 15 years observations of the data. We plot the average of Life_expectancy year by year to observe any significative increasing or decreasing in the temporal scale. Then in order to check how the differences are distributed in each region, we use a t-test on the data from each region vs the years 2000 and 2015. The p-values for each region are less than 0.05, so we can reject the null hypothesis. We visualize this in a plot and Africa seems the region that faced the most significant increasing in life expectancy, followed by Europe.
+
+```{r}
+df_avg <- df %>%
+  group_by(Year, Region) %>%
+  summarise(Average_Life_Expectancy = mean(Life_expectancy, na.rm = TRUE, .groups = NULL), .groups = "drop")
+
+ggplot(df_avg, aes(x = Year, y = Average_Life_Expectancy, color = Region)) +
+  geom_line(size = 1.5) +  
+  geom_point(size = 1.5) +    
+  labs(
+    title = "Average Life Expectancy by Region (2000-2015)",
+    x = "Year",
+    y = "Average Life Expectancy",
+    color = "Region"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10)
+  )
+
+df_median <- df %>%
+  filter(Year %in% c(2000, 2015)) %>%
+  group_by(Region, Year) %>%
+  summarise(Median_Life_Expectancy = median(Life_expectancy, na.rm = TRUE),.groups = "drop")
+
+df_filtered <- df %>%
+  filter(Year %in% c(2000, 2015))
+
+t_test_results <- df_filtered %>%
+  group_by(Region) %>%
+  summarise(t_test = list(t.test(Life_expectancy ~ Year)), .groups = "drop") %>%
+  mutate(p_value = sapply(t_test, function(x) x$p.value))
+
+shapiro_test_results <- df_filtered %>%
+  group_by(Year, Region) %>%
+  summarise(shapiro_test = list(shapiro.test(Life_expectancy)), .groups = "drop") %>%
+  mutate(p_value = sapply(shapiro_test, function(x) x$p.value))
+
+print(t_test_results)
+print(shapiro_test_results)
+
+ggplot(df_median, aes(x = Region, y = Median_Life_Expectancy, color = as.factor(Year), group = Year)) +
+  geom_point(size = 3) +
+  geom_line() +
+  labs(title = "Average Life Expectancy Comparison by Region (2000 vs 2015)",
+       x = "Region",
+       y = "Median Life Expectancy") +
+  scale_color_manual(values = c("tan", "darkcyan")) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))  
+```
+
+Life expectancy has generally increased over time, influenced by improvements in healthcare, education, and economic conditions. This trend is strongly correlated with variables such as GDP per capita (positively) and child mortality (negatively). In Africa, GDP per capita has steadily increased, leading to a significant reduction in child mortality and contributing to a notable rise in life expectancy. In contrast, the Middle East presents a more varied scenario: while child mortality has also decreased, GDP per capita has shown more fluctuation over time. Consequently, the Middle East has not experienced the same substantial increase in life expectancy as Africa, highlighting the complex interplay of economic and social factors in shaping health outcomes.
+
+```{r}
+middle_east_gdp <- df %>%
+  filter(Region == "Middle East") %>%
+  group_by(Year) %>%
+  summarise(Mean_GDP_per_capita = mean(GDP_per_capita, na.rm = TRUE))
+
+africa_gdp <- df %>%
+  filter(Region == "Africa") %>%
+  group_by(Year) %>%
+  summarise(Mean_GDP_per_capita = mean(GDP_per_capita, na.rm = TRUE))
+
+plot_middle_east <- ggplot(middle_east_gdp, aes(x = Year, y = Mean_GDP_per_capita)) +
+  geom_line(color = "blue", size = 1) +
+  geom_point(color = "blue", size = 2) +
+  labs(
+    title = "GDP per capita in Middle East",
+    x = "Year",
+    y = "Mean GDP per capita"
+  ) +
+  theme_minimal()
+
+plot_africa <- ggplot(africa_gdp, aes(x = Year, y = Mean_GDP_per_capita)) +
+  geom_line(color = "green", size = 1) +
+  geom_point(color = "green", size = 2) +
+  labs(
+    title = "GDP per capita in Africa",
+    x = "Year",
+    y = "Mean GDP per capita"
+  ) +
+  theme_minimal()
+
+grid.arrange(plot_middle_east, plot_africa, ncol = 2)
+
+region1 <- "Africa"
+region2 <- "Middle East"
+
+region1_data <- df %>%
+  filter(Region == region1) %>%
+  group_by(Year) %>%
+  summarise(Average_Under_five_deaths = mean(Under_five_deaths, na.rm = TRUE))
+
+region2_data <- df %>%
+  filter(Region == region2) %>%
+  group_by(Year) %>%
+  summarise(Average_Under_five_deaths = mean(Under_five_deaths, na.rm = TRUE))
+
+plot2 <- ggplot(region2_data, aes(x = Year, y = Average_Under_five_deaths)) +
+  geom_line(color = "red", size = 1) +
+  geom_point(color = "red", size = 2) +
+  labs(
+    title = paste("Children Mortality in", region2),
+    x = "Year",
+    y = "Average Children Mortality"
+  ) +
+  theme_minimal()
+
+plot1 <- ggplot(region1_data, aes(x = Year, y = Average_Under_five_deaths)) +
+  geom_line(color = "blue", size = 1) +
+  geom_point(color = "blue", size = 2) +
+  labs(
+    title = paste("Children Mortality in", region1),
+    x = "Year",
+    y = "Average Children Mortality"
+  ) +
+  theme_minimal()
+
+plot2 <- ggplot(region2_data, aes(x = Year, y = Average_Under_five_deaths)) +
+  geom_line(color = "red", size = 1) +
+  geom_point(color = "red", size = 2) +
+  labs(
+    title = paste("Children Mortality in", region2),
+    x = "Year",
+    y = "Average Children Mortality", type = "1"
+  ) +
+  theme_minimal()
+
+plot2 + plot1
+```
+
+We can do a multiple linear regression to check how this two variables, GDP_per_capita and Children_mortality, explain life expectancy. It has been used a log transformation for GDP_per_capita since its relationship with the dependent variable may be nonlinear. We also introduce interaction between GDP_per_capita and Children_mortality to check if they affect in a crossed-way life_expectancy. Estimate coefficients are significative. The adjusted R-squared is high with 0.868, so these variables explain well the variance of life_expectancy, also taking into account the complexity of the model (Although there may be many possible other variables to consider that would improve the model).
+
+```{r}
+model <- lm(Life_expectancy ~ log(GDP_per_capita)*Under_five_deaths, data = df)
+summary(model)
+```
+
+To explore the interactions between different factors, we have used a 3D scatter plot to visualize the relationships among four key variables: BMI (Body Mass Index) on the X-axis, GDP per capita on the Y-axis, Schooling (average years of education) on the Z-axis, and Life Expectancy, which is represented by the color scale. The plot reveals that countries with higher GDP per capita tend to have higher levels of schooling, which is often associated with greater life expectancy. On the contrary, a lower BMI is frequently linked to lower life expectancy. This visualization highlights how economic and educational factors are interconnected and how they influence health outcomes.
+
+```{r}
+plot <- plot_ly(
+  data = df, 
+  x = ~BMI, 
+  y = ~GDP_per_capita, 
+  z = ~Schooling, 
+  type = "scatter3d",      
+  mode = "markers",        
+  color = ~Life_expectancy, 
+  colors = "YlOrRd",      
+  marker = list(size = 5, opacity = 0.7) 
+) %>%
+  layout(
+    scene = list(
+      xaxis = list(title = "BMI"),
+      yaxis = list(title = "GDP per Capita"),
+      zaxis = list(title = "Schooling")
+    ),
+    title = "3D Scatter Plot"
+  )
+
+plot
+```
+
+We want to analyze the trend of HIV over time in the most affected regions, which are Africa, Central America and Caribbean and South America.
+
+```{r}
+top_regions <- HIV_by_region$Region[1:3]
+
+hiv_trend_top_regions <- df %>%
+  filter(Region %in% top_regions) %>%
+  group_by(Region, Year) %>%
+  summarise(mean_HIV = mean(Incidents_HIV, na.rm = TRUE), .groups = "drop")
+
+ggplot(hiv_trend_top_regions, aes(x = Year, y = mean_HIV, color = Region, group = Region)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  labs(title = "Time trend of HIV in the most affected regions.",
+       x = "Year",
+       y = "Average HIV rate") +
+  theme_minimal()
+```
+
+As we can see, all three regions show a consistent downward trend in HIV rates, indicating progress in managing and controlling the epidemic. 
+In Africa, the average HIV rate decreased much more rapidly compared to the other regions, but had a much higher starting point and is still the region with the highest HIV incidence.
+
+We want to examine how Measles and Polio vaccination rates vary across different Regions. Using boxplots for each region, we can visualize the distributions and check for differences. It's interesting to see that, in terms of Measles vaccination rates, Oceania shows values similar to Africa, with the two regions being the only ones with rates lower than 75%. Africa has the lowest vaccination rates compared to other regions, while it's interesting to see that the Middle East has average similar to those of Europe, which is the best performing region, albeit with much higher dispersion. Overall, the trends are similar across the two vaccines, though Measles vaccination appears to exhibit slightly greater variability.
+
+```{r}
+# Boxplot of Measles by Region
+ggplot(df, aes(x = Region, y = Measles, fill = Region)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Boxplot of Polio by Region
+ggplot(df, aes(x = Region, y = Polio, fill = Region)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+## Dimensionality reduction and clustering
+
+Principal Component Analysis (PCA) is a method which, taking advantage of the correlation between variables, can reduce the computational complexity of the statistical problem being studied. If the original data set is characterized by a number N of variables, PCA tells us if this number can be reduced by working with M<N "latent variables", built as linear combinations of the original ones. This procedure is based on linear algebra with the latent variables representing the directions that minimize the vertical distance from the points in the data set, which is equivalent to finding the directions of maximum variance. In the end, we obtain an orthonormal basis (uncorrelated variables) spanning a space of lower dimension than the one we started with.
+
+One of the problems of this approach is that the new variables are not easy to interpret, and in most cases one has to accept them as a "mathematical result" without attaching to each direction any specific meaning. In a few cases, however, it is possible to both reduce the data set dimensionality and also propose an interpretation for the new variables.
+
+PCA is not only used for complexity reduction, but also as a way to cluster the data. This is because the first two or three principal components are often able to explain a large amount of the data variance. This allows the visualization of the data by projecting it in the plane of the first two PCs or in the space of the first three PCs and checking for the presence of clusters in the data.
+
+```{r}
+#library(reticulate)
+#version <- "3.9.10"
+#install_python( version = version)
+#virtualenv_create("my-python", python_version = version)
+```
+
+
+```{python}
+#Importing the necessary libraries
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+from six import print_
+from sklearn import decomposition
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_samples, silhouette_score
+from sklearn.model_selection import ParameterGrid
+from sklearn.preprocessing import scale
+from sklearn.metrics import silhouette_score
+from mpl_toolkits.mplot3d import Axes3D
+```
+
+
+
+```{python}
+#Reading the data set and preparing columns for use as labels later on.
+#df = pd.read_csv("/Users/chiaracangelosi/Documents/1-Uni/DataScience/SL/Project/df3.csv")
+df = pd.read_csv("C:/Users/g2not/Documents/Data/df.csv", index_col=0)
+
+# Discretizing 'Life_expectancy' into 3 equal-frequency categories
+df['Life_expectancy_discretized'] = pd.qcut(df['Life_expectancy'], q=3, labels=['Low', 'Medium', 'High'])
+
+countries = df["Country"].reset_index(drop=True)
+regions = df["Region"].reset_index(drop=True)
+LifeExpt_Levels = df["Life_expectancy_discretized"].reset_index(drop=True)
+GDP_levels = df["GDP_discretized"].reset_index(drop=True)
+
+LifeExpt_mapping = {
+    "Low" : 1,
+    "Medium" : 2,
+    "High" : 3
+}
+
+level_mapping = {
+    "low": 1,
+    "medium-low": 2,
+    "medium-high": 3,
+    "high": 4,
+    "veryhigh": 5
+}
+
+region_mapping = {
+    "Africa": 1,
+    "Asia": 2,
+    "Central America and Caribbean": 3,
+    "Europe": 4,
+    "Middle East": 5,
+    "North America": 6,
+    "Oceania": 7,
+    "South America": 8
+}
+
+LifeExpt_levels_numerical = LifeExpt_Levels.map(LifeExpt_mapping)
+GDP_levels_numerical = GDP_levels.map(level_mapping)
+Region_numerical = regions.map(region_mapping)
+
+
+
+```
+
+PCA works only on numerical variables, therefore all the categorical variables were removed. Furthermore, we applied PCA through the decomposition library of scikit_learn, and this required the standardization of the database through the scale function from the preprocessing library. Between the numerical variables, we also removed Life Expectancy so we could check whether a clustering based on it could be found while analyzing the data set solely on the other variables.
+
+```{python}
+#Leaving only the useful numerical variables
+numerical_df = df.select_dtypes(include=['number'])
+print(numerical_df.info())
+
+columns_to_remove = ['Year', 'Life_expectancy']
+columns_to_keep = ['Infant_deaths','Under_five_deaths', 'Adult_mortality', 'Alcohol_consumption', 'Hepatitis_B', 'Meaasles', 'BMI', 'Polio','Diphtheria', 'Incidents_HIV', 'GDP_per_capita', 'Population_mln', 'Thinness_ten_nineteen_years','Thinness_five_nine_years', 'Schooling']
+reduced_df = numerical_df.drop(columns=columns_to_remove)
+
+#Scaling the data set to prepare it for PCA fitting
+scaled = scale(reduced_df)
+```
+
+The PCA.fit_transform method allows to fit the PCA model (after specifying the number of components to keep) on the dataset and to project the data in the principal components space.
+
+```{python}
+#Fitting the PCA function from the scikit_learn.decomposition library
+pca2 = decomposition.PCA(n_components=2)
+pca3 = decomposition.PCA(n_components=3)
+pca10 = decomposition.PCA(n_components=10)
+
+M2 = pca2.fit_transform(scaled)
+M3 = pca3.fit_transform(scaled)
+M10 = pca10.fit_transform(scaled)
+
+# Printing the amount of variance explained by the components
+print(f'The variances explained by the first {pca10.n_components} components are: {pca10.explained_variance_ratio_}')
+tot_expl_var = sum(pca10.explained_variance_ratio_)
+print(f'La varianza totale spiegata è pari a: {tot_expl_var}')
+print(f'I loadings delle prime n componenti sono:')
+loadings = pd.DataFrame(abs(pca2.components_), columns=reduced_df.columns, index=['PC_1', 'PC_2'])
+print(loadings)
+
+# Saving the first two component loadings for later visualization
+loadings_pc1 = pca2.components_[0]
+loadings_pc2 = pca2.components_[1]
+```
+
+A Scree Plot shows the amount of variance explained by each principal component in descending order. On our database, the first 10 principal components explain over 97% of all the variance, with about 50% explained by the first, 11% by the second, 10% by the third, 7% by the fourth and 5% by the fifth. More precisely, the first 5 PCs explain a total of around 83% of the data variance, suggesting that 5 or 6 latent variables encapsulate enough variance to be used instead of the starting 15.
+
+```{python}
+#Scree Plot to visualize the variance explained by each principal component
+
+plt.figure(figsize=(10, 10))
+plt.plot(
+    np.arange(1, len(pca10.explained_variance_ratio_) + 1),
+    pca10.explained_variance_ratio_,
+    marker="o", linestyle="-", color="b"
+)
+plt.title("Scree Plot", fontsize=16)
+plt.xlabel("Principal Component", fontsize=14)
+plt.ylabel("Explained Variance (%)", fontsize=14)
+plt.xticks(ticks=np.arange(1, len(pca10.explained_variance_ratio_) + 1))
+plt.grid()
+
+plt.show()
+plt.clf()
+```
+
+Two histogram allow us to see easily which variables contributed the most to the first and second principal components. The distribution for the first PC shows that, while the mortality related variables and schooling are slightly above the others, most variables gave a relevant contribution. This tells us that PC1 is a very mixed variable. Regarding the second PC, the story is similar, albeit the thinness variables do show a stronger contribution than others.
+
+```{python}
+#Histogram covering the contribution of each original variable to the first two principal components
+# Calculate contributions for PC1
+absolute_loadings_1 = np.abs(loadings_pc1)
+variable_contributions_1 = 100 * absolute_loadings_1 / np.sum(absolute_loadings_1)
+
+# Plot for the first principal component
+plt.figure(figsize=(12, 8))
+plt.bar(columns_to_keep, variable_contributions_1, color='skyblue')
+plt.xticks(rotation=45, ha="right", fontsize=12)
+plt.ylabel("Contribution to PC1 (%)", fontsize=14)
+plt.xlabel("Variables", fontsize=14)
+plt.title("Contribution of Variables to the First Principal Component", fontsize=16)
+plt.grid(axis='y', linestyle="--", alpha=0.7)
+plt.tight_layout()
+plt.show()
+
+# Calculate contributions for PC2
+absolute_loadings_2 = np.abs(loadings_pc2)
+variable_contributions_2 = 100 * absolute_loadings_2 / np.sum(absolute_loadings_2)
+
+# Plot for the second principal component
+plt.figure(figsize=(12, 8))
+plt.bar(columns_to_keep, variable_contributions_2, color='skyblue')
+plt.xticks(rotation=45, ha="right", fontsize=12)
+plt.ylabel("Contribution to PC2 (%)", fontsize=14)
+plt.xlabel("Variables", fontsize=14)
+plt.title("Contribution of Variables to the Second Principal Component", fontsize=16)
+plt.grid(axis='y', linestyle="--", alpha=0.7)
+plt.tight_layout()
+plt.show()
+plt.clf()
+```
+
+Sometimes, projecting the original variables in the plane of the first two principal components allows for a tentative interpretation of the "meaning" of these latent variables. In this case, the graph shows that "negative" features like the mortalities and the thinness variables contribute positively to the first PC, while "positive" features contribute negatively, like vaccinations rates, schooling or GDP. However, also BMI and alcohol consumption contribute negatively to PC1. This could be because higher alcohol consumption and BMI are higher on average in rich countries. Therefore, PC1 should be strongly inversely correlated with life expectancy. However, as said, the interpretation of principal components isn't an exact science.
+
+```{python}
+#Transforming M into a Pandas Dataframe for visualization purposes.
+pca_df = pd.DataFrame(M2, columns=["PC1", "PC2"])
+pca_df["Country"] = countries[countries.index.isin(pca_df.index)]
+
+# Projection of the original variables on the first two principal components
+
+plt.figure(figsize=(12, 8))
+for i, var in enumerate(columns_to_keep):
+    plt.arrow(0, 0, loadings_pc1[i], loadings_pc2[i],
+              head_width=0.02, head_length=0.02, fc='blue', ec='blue')
+    plt.text(loadings_pc1[i] + 0.02, loadings_pc2[i] + 0.02, var, fontsize=10)
+
+plt.axhline(0, color='black', linewidth=0.5, linestyle="--")
+plt.axvline(0, color='black', linewidth=0.5, linestyle="--")
+plt.title("Variables Projection on PC1 and PC2", fontsize=16)
+plt.xlabel("PC1 ({}%)".format(round(100 * pca2.explained_variance_ratio_[0], 1)), fontsize=14)
+plt.ylabel("PC2 ({}%)".format(round(100 * pca2.explained_variance_ratio_[1], 1)), fontsize=14)
+plt.grid()
+
+plt.show()
+plt.clf()
+```
+
+The projection of the data on the plane of the first two components is a method sometimes useful to find clusters in the data. 
+We tried various ways of labeling the data, first by country and by region, than by GDP levels and finally by Life Expectancy levels. The country labeling isn't an effective way to visualize the data, as 179 countries are too many to interpret the graph and it doesn't render properly either. The regions labeling shows some division between "richer" regions and "poorer" regions, but it isn't particularly clear either also because most regions contain both poor and rich nations. This division was strenghtened by the GDP labeling, which showed a more evident separation between the data. Finally, the Life Expectancy labels proved to be the clearest, also due to having divided the data in only 3 categories: "Low", "Medium" and "High". This labeling shows a clear direction of increasing life expectancy. This isn't to say that there are clearly visible and divided clusters, but that it is evident that poorer countries tend to group in a region of the plane while richer countries in another, in particular the high GDP country are quite well clustered together.
+Given that 2 PCs only explain about 60% of the total variance, we checked if projecting the data in the 3D space of the first three components improved the visual separation of data points, but the 3D graph isn't more clear than the 2D example.
+
+```{python}
+#Projection of data on the PC1-PC2 plane, labeled by Regions
+cmap = plt.cm.Set1
+norm = plt.Normalize(vmin=1, vmax=9)
+
+plt.figure(figsize=(10,10))
+scatter = plt.scatter(M2[:,0],M2[:,1],c=Region_numerical,cmap=cmap, norm=norm)
+
+plt.xlabel('principal component 1')
+plt.ylabel('principal component 2')
+
+region_labels = {
+    1: "Africa",
+    2: "Asia",
+    3: "Central America and Caribbean",
+    4: "Europe",
+    5: "Middle East",
+    6: "North America",
+    7: "Oceania",
+    8: "South America"
+}
+
+legend_labels = list(region_labels.keys())
+colors = [cmap(norm(level)) for level in region_labels]
+legend_patches = [mpatches.Patch(color=colors[i], label=region_labels[legend_labels[i]]) for i in
+                  range(len(legend_labels))]
+plt.legend(handles=legend_patches, title='Region')
+
+plt.show()
+plt.clf()
+```
+
+
+
+```{python}
+#Projection of data on the PC1-PC2 plane, labeled by GDP level
+cmap = plt.cm.plasma
+norm = plt.Normalize(vmin=1, vmax=5)
+
+plt.figure(figsize=(10,10))
+scatter = plt.scatter(M2[:,0],M2[:,1],c=GDP_levels_numerical,cmap=cmap, norm=norm)
+
+plt.xlabel('principal component 1')
+plt.ylabel('principal component 2')
+
+level_labels = {
+    1: 'Very Low',
+    2: 'Low',
+    3: 'Medium',
+    4: 'Medium-High',
+    5: 'High'
+}
+
+legend_labels = list(level_labels.keys())
+colors = [cmap(norm(level)) for level in legend_labels]
+legend_patches = [mpatches.Patch(color=colors[i], label=level_labels[legend_labels[i]]) for i in
+                  range(len(legend_labels))]
+plt.legend(handles=legend_patches, title='GDP Levels')
+
+#cbar = plt.colorbar(scatter)
+#cbar.set_label('GDP Levels')
+
+plt.show()
+plt.clf()
+```
+
+
+```{python}
+#Projection of data on the PC1-PC2-PC3 space, labeled by GDP level
+cmap = plt.cm.plasma
+norm = plt.Normalize(vmin=1, vmax=5)
+
+fig = plt.figure(figsize=(12, 8))
+ax = fig.add_subplot(111, projection='3d')
+
+scatter = ax.scatter(
+    M3[:, 0], M3[:, 1], M3[:, 2],
+    c=GDP_levels_numerical,
+    cmap=cmap,
+    norm=norm,
+    s=50
+)
+
+ax.set_title("Projection in the 3D Space of the First Three Principal Components", fontsize=16)
+ax.set_xlabel(f"PC1 ({pca3.explained_variance_ratio_[0] * 100:.2f}%)", fontsize=12)
+ax.set_ylabel(f"PC2 ({pca3.explained_variance_ratio_[1] * 100:.2f}%)", fontsize=12)
+ax.set_zlabel(f"PC3 ({pca3.explained_variance_ratio_[2] * 100:.2f}%)", fontsize=12)
+
+level_labels = {
+    1: 'Very Low',
+    2: 'Low',
+    3: 'Medium',
+    4: 'Medium-High',
+    5: 'High'
+}
+
+legend_labels = list(level_labels.keys())
+colors = [cmap(norm(level)) for level in legend_labels]
+legend_patches = [mpatches.Patch(color=colors[i], label=level_labels[legend_labels[i]]) for i in
+                  range(len(legend_labels))]
+plt.legend(handles=legend_patches, title='GDP Levels', fontsize=12, loc='best')
+plt.show()
+plt.clf()
+```
+```{python}
+# Projection of data on the PC1-PC2-PC3 space, labeled by Life Expectancy level
+cmap = plt.cm.plasma
+norm = plt.Normalize(vmin=1, vmax=5)
+
+fig = plt.figure(figsize=(12, 8))
+ax = fig.add_subplot(111, projection='3d')
+
+scatter = ax.scatter(
+    M3[:, 0], M3[:, 1], M3[:, 2],
+    c=LifeExpt_levels_numerical,
+    cmap=cmap,
+    norm=norm,
+    s=50
+)
+
+ax.set_title("Projection in the 3D Space of the First Three Principal Components", fontsize=16)
+ax.set_xlabel(f"PC1 ({pca3.explained_variance_ratio_[0] * 100:.2f}%)", fontsize=12)
+ax.set_ylabel(f"PC2 ({pca3.explained_variance_ratio_[1] * 100:.2f}%)", fontsize=12)
+ax.set_zlabel(f"PC3 ({pca3.explained_variance_ratio_[2] * 100:.2f}%)", fontsize=12)
+
+level_labels = {
+    1: 'Low',
+    2: 'Medium',
+    3: 'High'
+}
+
+legend_labels = list(level_labels.keys())
+colors = [cmap(norm(level)) for level in legend_labels]
+legend_patches = [mpatches.Patch(color=colors[i], label=level_labels[legend_labels[i]]) for i in
+                  range(len(legend_labels))]
+plt.legend(handles=legend_patches, title='Life Expectancy levels', fontsize=12, loc='best')
+plt.show()
+plt.clf()
+```
+
+
+Given that our data set doesn't have an excessive number of variables and that the latent variables found through PCA are of difficult interpretation, we avoided using the PCs further in our analysis. As will be seen in the next section, quite precise and efficient predictions have been possible with the use of linear regression and trees over the original data set. However, we wanted to check if clustering techniques would show us some very clear partition of the data. To do this, given the high number of data points, we wanted to avoid using dendrograms and instead chose to use the k-means clustering algorithm. The k-means is a clustering algorithm based on the idea of iteratively finding a grouping of the data that minimizes the within cluster sum of squares (WCSS). Because total variance remains unchanged, this also means that we are maximizing the between cluster sum of squares (BCSS). The algorithm is non-hierarchical and the number of clusters k is given in input at the beginning. Than, after having chosen k points through some initialization technique (the centroids), the algorithm assigns each observation to the closest centroid (based on euclidean distance). Than, it calculates the mean of the group and uses this value to reassign the centroid (it can coincide with one of the observations but doesn't have to). Now the WCSS for each group is calculated and confronted with a threshold value. The process is repeated until the threshold is met. The use of an euclidean distance guarantees that the algorithm will converge, most of the time quite quickly, but not necessarily to the overall optimum. Therefore usually the algorithm is run a few times so as to check for different possible solutions.
+
+One of the problems of this algorithm is the need to find the best number of clusters k for the data set at hand and the best initialization technique. The first problem can be approached through silhouette analysis. Silhouette analysis checks how well each point is associated to it's own cluster by calculating the mean distance to each point of the cluster and to the closer neighboring cluster. This Si value is than averaged over all points obtaining S. S belongs to the interval [-1;1]. A value of S closer to 1 means a good clustering of most points, while a values closer to -1 means a bad clustering of most points. A value closer to zero suggests that either the clustering is good for some points and bad for others or that many points are on the "border" with a neighboring cluster.
+
+To apply k-means we made use of the silhouette function in the metrics library of scikit_learn and the KMeans function from the cluster library. The silhouette analysis showed that the best number of clusters is 2. Most of the times 3 is the best second choice, while a few other timex 6 has been selected by the algorithm as the best. We concentrate on the most stable result, that is 2 clusters.
+
+```{python}
+#Candidate values for our number of cluster
+parameters = [2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+#Instantiating ParameterGrid to pass number of clusters as input
+parameter_grid = ParameterGrid({'n_clusters': parameters})
+best_score = -1
+kmeans_model = KMeans()     # instantiating KMeans model
+silhouette_scores = []
+
+#Looping through all the chosen values of k
+for p in parameter_grid:
+    kmeans_model.set_params(**p)    # set current hyper parameter
+    kmeans_model.fit(pd.DataFrame(scaled))    # fit model on dataset
+    ss = silhouette_score(pd.DataFrame(scaled), kmeans_model.labels_)   # calculate silhouette_score
+    silhouette_scores += [ss]       # store all the scores
+    print('Parameter:', p, 'Score', ss)
+    # check p which has the best score
+    if ss > best_score:
+        best_score = ss
+        best_grid = p
+        
+#Plotting silhouette score
+plt.bar(range(len(silhouette_scores)), list(silhouette_scores), align='center', color='#722f59', width=0.5)
+plt.xticks(range(len(silhouette_scores)), list(parameters))
+plt.title('Silhouette Score', fontweight='bold')
+plt.xlabel('Number of Clusters')
+plt.show()
+plt.clf()
+```
+
+Having chosen k, we applied KMeans on the projection of the data in the 3D space of the first 3 principal components, which as we saw explained a little more than 70% of the total variance. With both k=2 and k=3 the result is analogous, with the kmeans identifying two or three cluster that "touch" on one side, that is clusters that don't have an obvious identity and separation between each other. This suggests us that the data is not easy to cluster, and that the data points vary in a continuous way. Therefore, other attempts at clustering have not been taken in consideration.
+
+```{python}
+kmeans_model_vis = KMeans(n_clusters=2)
+cluster_labels = kmeans_model_vis.fit_predict(X = M3)
+
+fig = plt.figure(figsize=(12, 8))
+ax = fig.add_subplot(111, projection='3d')
+
+scatter = ax.scatter(
+    M3[:, 0], M3[:, 1], M3[:, 2],
+    c=cluster_labels,  # Color based on cluster assignments
+    cmap='viridis',  # Use a colormap for clusters
+    s=50
+)
+
+ax.set_title("K-means Clustering on the data projection in the PCA space", fontsize=16)
+ax.set_xlabel(f"PC1 ({pca3.explained_variance_ratio_[0] * 100:.2f}%)", fontsize=12)
+ax.set_ylabel(f"PC2 ({pca3.explained_variance_ratio_[1] * 100:.2f}%)", fontsize=12)
+ax.set_zlabel(f"PC3 ({pca3.explained_variance_ratio_[2] * 100:.2f}%)", fontsize=12)
+
+centroids = kmeans_model_vis.cluster_centers_
+ax.scatter(
+    centroids[:, 0], centroids[:, 1], centroids[:, 2],
+    c='red', marker='X', s=200, label='Centroids'
+)
+
+ax.legend()
+plt.show()
+plt.clf()
+```
+
+# Model building
+
+We want to find the right model to describe our data. We have many independent variables, so one of our objectives is to exclude useless ones to decrease model complexity and avoid over fitting. Increasing the number of predictors reduces RSS and therefore training error, but we really aim for is a low error test, so we have to deal with feature and model selection. 
+
+In first instance we apply multiple linear regression and check for the results. Our data set has 2864 observations and 16 variables. We split it into training (80% set) and test set(20%). We train the model on the train set and make predictions using the test set. 
+We identify, through VIF, the presence of multicollinearity due to the high correlation of specific variables. We deal with it by modifying variables and check what happens when Ridge selection is applied.
+
+The results of our linear regression are very accurate. The mortality variables are, as one might suspect, strongly negatively correlated with life expectancy. They represent sort of an inverse of the target variable. We thought that it could be interesting to check what happens when these variables are removed from the data set, specifically we wanted to check what other variables the stepwise forward regression and the LASSO regression (optimized using the cross-validation method) would suggest as the most important when mortalities are excluded.
+
+Having obtained good results with linear regression models, we were curious to see how some non-parametric methods would behave. We opted for decision-tree and random forest techniques and in the end compared the results.
+
+
+## Linear regression
+
+We first make a copy of the original data set excluding categorical variables. We want to understand how numerical factors influence the response variable Life expectancy considering the full data set.
+
+```{r}
+df_new1 <- data
+columns_to_remove <- c( "Year", "Region", "Economy_status_Developed", "Country", "Economy_status_Developing")
+df_new1 <- df_new1[, !(names(df_new1) %in% columns_to_remove)]
+str(df_new1)
+```
+
+We want to understand how the model performs on "fresh" data, so we split the data set in train and test set. We apply a multiple linear regression model on the train set. We can see that estimated coefficients like Adult_mortality, Infant_deaths, BMI, GDP, Schooling are significant since p-value < 0.05 (the null hypothesis of being equal to zero is rejected). Residuals in 1Q and 3Q are between -0.87 and 0.93, quite low values. R^2 is 0.97, so the model explainability of life expectancy is very high; adjustedR^2 is still high, suggesting the importance of the predictors and the reliability of the model. RMSE is 1.43 and is very close to residual standard error 1.34. We applied also a diagnostic test on the residuals. The Shapiro-Wilk test result's say that residuals are not normal, which is in contrast with having so many data points and the consequences of the central limit theorem. Also, the Q-Q plot suggests that the residuals are indeed normally distributed. Perhaps the Shapiro-Wilk test isn't reliable in this case.
+
+Leverage measures how far predictions over those points are from the average prediction for the same set of independent variables. A point with high leverage isn't necessarily a point with high influence, because it could be far from the mean of the predictions but well aligned with the model. However, if a point has both high leverage and high residual, then it is an influent point. The residuals vs leverage plot shows that the data set is made up mostly of low leverage points which should help the model precision. The spread of the residuals around the horizontal line could also give informations about the presence of heteroscedasticity but the plot isn't particularly clear in this sense, given also how much more packed the low leverage region is. Similarly the residuals vs fitted values plot does show some amount of heteroscedasticity but more specific tests are needed.
+
+```{r}
+set.seed(123) 
+index <- createDataPartition(df_new1$Life_expectancy, p = 0.8, list = FALSE)
+train <- df_new1[index, ]  # 80% of data for training
+test <- df_new1[-index, ]  # 20% of data for test
+
+# Multiple linear regression model
+model <- lm(Life_expectancy ~ ., data = train)
+summary(model)
+
+# Linear regression diagnostic
+# 1. Residuals vs fitted values
+par(mfrow = c(2, 2))
+plot(model)
+
+# 2. Diagnostic of residuals
+shapiro_test <- shapiro.test(resid(model))  # Test Shapiro-Wilk
+cat("Shapiro-Wilk test p-value:", shapiro_test$p.value, "\n")
+
+
+# Prediction on test set
+predictions <- predict(model, newdata = test, interval = "confidence")
+str(predictions)
+test$Predicted <- predictions[, "fit"]
+
+#Observed values vs fitted values
+par(mfrow = c(1, 1)) 
+plot(test$Life_expectancy, test$Predicted, main = "Observed vs Predicted", 
+     xlab = "Observed Values", ylab = "Predicted Values", pch = 19, col = "blue")
+abline(0, 1, col = "red", lwd = 2)  #Line y = x
+
+# Other metrics on test set
+mse_MLR <- mean((test$Life_expectancy - test$Predicted)^2)  # Mean Squared Error
+rmse_MLR <- sqrt(mse_MLR)  # Root Mean Squared Error
+mae_MLR <- mean(abs(test$Life_expectancy - test$Predicted))
+cat("Mean Absolute Error (MAE):", mae_MLR,"\n")
+cat("MSE on test set:", mse_MLR, "\n")
+cat("RMSE on test set:", rmse_MLR, "\n")
+
+# R2
+TSS <- sum((test$Life_expectancy - mean(test$Life_expectancy))^2)  # Total Sum of Squares
+RSS <- sum((test$Life_expectancy - test$Predicted)^2)  # Sum of Squared Residuals
+R2_MLR <- 1 - (RSS / TSS)
+
+cat("R-squared on test set:", R2_MLR, "\n")
+```
+
+We wanted to check for multi-collinearity and for heteroscedasticity, therefore we calculated the Variance inflation factor (VIF) and applied the Breusch-Pagan test. There are different variables with VIF greater than 5, they could in theory affect our model results. To tackle this problem, we applied the Ridge selection method, which deals with multicollinearity. We also observed with Breusch-Pagan test that heterostedasticity is not satisfied (p-value < 0.05). In this regard we can only notice that the model is capable of quite good predictions, albeit perhaps the intervals of confidence for our predictions may not be too reliable.
+
+```{r}
+#Calculating VIF
+vif_values <- vif(model)
+cat("VIF Values:\n")
+print(vif_values)
+
+#Variables and multicollinearity
+high_vif <- names(vif_values[vif_values > 5])  # Usual threshold of VIF > 5
+if (length(high_vif) > 0) {
+  cat("\nVariables with VIF > 5 (possible multicollinearity):\n")
+  print(high_vif)
+} else {
+  cat("\nThere are not variables con VIF > 5 (multicollinearity not problematic).\n")
+}
+
+# Test of eteroscedasticity Breusch-Pagan
+
+bp_test <- bptest(model)  # Test  Breusch-Pagan
+cat("\nBreusch-Pagan Test Results:\n")
+print(bp_test)
+
+# Interpretation of p-value
+if (bp_test$p.value < 0.05) {
+  cat("\nConclusione: Presence of eteroscedasticity  (p < 0.05).\n")
+} else {
+  cat("\nConclusion: there are not evidence of eteroscedastiticy (p >= 0.05).\n")
+}
+```
+
+As we said, to tackle collinearity we tried to apply the Ridge shrinkage algorithm, which is able to reduce the ill effects of collinearity by introducing a penalty term in the OLS minimization procedure. This penalty term depends on the parameter $\lambda$ and shrinks coefficients in such a way to minimize the test error.
+
+```{r}
+x <-model.matrix(Life_expectancy~  ., df_new1)[,-1]  #matrix corresponding to the predictors
+
+y <- df_new1$Life_expectancy
+
+grid <- 10^seq(10,-2, length = 100) #range of lambda between 10^10 e 10^-2
+ridge.mod <-glmnet(x, y, alpha = 0, lambda = grid, thresh = 1e-7) #alpha = 0 means that glmnet fits a ridge regression model, this function automatically standardizes variables on the same scale
+```
+
+We split the samples into a training set and a test set in order to estimate the test error.
+
+```{r}
+ set.seed(1)
+ train <-sample(1:nrow(x), nrow(x) / 2)
+ test <- (-train)
+ y.test <- y[test]
+```
+
+We have to tune lambda taking into account the Bias-Variance trade-off. We can do this with cross-validation. It is already evident that MSE is minimized for a very small lambda, where variance is very high and bias is almost zero. This tells us that the model seems to need most of the variables to work at it's best, but the low bias is saying that it performs well also on test data. We could imagine fitting the model on an independent data set to better verify our model.
+
+```{r}
+mse <- rep(NA, length(grid))
+squared.bias <- rep(NA, length(grid))
+variance <- rep(NA, length(grid))
+
+
+for (i in 1:length(grid)) {
+  
+  ridge.pred.train <- predict(ridge.mod, s = grid[i], newx = x[train, ])
+  
+  ridge.pred.test <- predict(ridge.mod, s = grid[i], newx = x[test, ])
+  mse[i] <- mean((ridge.pred.test - y.test)^2)
+  
+  bias <- mean(ridge.pred.test - y.test)
+  squared.bias[i] <- bias^2
+  
+  variance[i] <- mean((ridge.pred.test - mean(ridge.pred.test))^2)
+}
+
+
+par(mfrow = c(1, 1))
+
+plot(grid, mse, type = "l", col = "blue", lwd = 2, log = "x", xlab = "Lambda", ylab = "MSE", main = "MSE, Squared Bias ,variance")
+lines(grid, squared.bias, col = "red", lwd = 2)
+lines(grid, variance, col = "green", lwd = 2)
+
+legend("topright", legend = c("MSE", "Squared Bias", "Variance"), col = c("blue", "red", "green"), lwd = 2)
+
+```
+
+In general, instead of arbitrarily choosing lambda, it is be better to use cross-validation to choose it. We see that the value of lambda that results in the smallest cross-validation error is 0.87. It is not very large, suggesting that ridge regression is working in a similar way to linear regression. We then evaluate the test MSE associated which is 2.35. This value is slightly higher than the MSE of about 2 obtained by the standard linear regression, but should also be less supsceptible to the effects of collinearity between the variables and, if necessary, offer more reliable intervals of confidence.
+
+```{r}
+set.seed(1)
+ cv.out <-cv.glmnet(x[train, ], y[train], alpha = 0)
+ plot(cv.out)
+ bestlam <- cv.out$lambda.min
+ cat("the best lambda is:", bestlam, "\n")
+ 
+ridge.pred <-predict(ridge.mod, s = bestlam,
+newx = x[test, ])
+mse_ridge <- mean((ridge.pred- y.test)^2)
+rmse_ridge <- sqrt(mse_ridge)
+
+# R2
+TSS <- sum((y.test - mean(y.test))^2)  # Total Sum of Squares
+RSS <- sum((y.test - ridge.pred)^2)  # Sum of Squared Residuals
+R2_ridge <- 1 - (RSS / TSS)
+
+cat("R-squared on test set:", R2_ridge, "\n")
+
+cat("MSE:", mse_ridge, "\n")
+cat("RMSE:", rmse_ridge)
+  
+```
+
+We apply the ridge fit and predict the coefficients of the model and the coefficients error. The standard error on the coefficients of the multicollinear variables, Polio/Diphtheria and the two thinness, are now smaller compared to the coefficients themselves if compared to the results from the standard linear regression. This could suggest that Ridge is diminishing the effects of collinearity on those variables and stabilizing the coefficients.
+
+```{r}
+out <-glmnet(x, y, alpha = 0)
+ predict(out, type = "coefficients", s = bestlam)[1:15, ]
+```
+
+```{r}
+set.seed(123)  # For reproducibility
+num_bootstrap <- 100  # Number of bootstrap samples
+coef_matrix <- matrix(NA, nrow = num_bootstrap, ncol = ncol(x) + 1)  # Include intercept
+
+for (i in 1:num_bootstrap) {
+  # Resample the data
+  bootstrap_indices <- sample(1:nrow(x), replace = TRUE)
+  x_bootstrap <- x[bootstrap_indices, ]
+  y_bootstrap <- y[bootstrap_indices]
+  
+  # Fit the Ridge model
+  ridge_boot <- glmnet(x_bootstrap, y_bootstrap, alpha = 0, lambda = bestlam)
+  
+  # Extract coefficients (including intercept)
+  coef_matrix[i, ] <- as.vector(coef(ridge_boot, s = bestlam))
+}
+
+# Compute standard errors for coefficients
+coef_se <- apply(coef_matrix, 2, sd)
+names(coef_se) <- rownames(coef(ridge_boot, s = bestlam))  # Add names to coefficients
+print(coef_se)
+```
+
+
+Ridge is limited to shrinking and not zeroing coefficients even if the variables are actually irrelevant, instead stepwise regression can ignore them. Ridge MSE is higher than the one provided by stepwise which optimizes the variables selection. Ridge's behavior is quite similar to the original linear regression.
+
+## Feature selection: stepwise regression and lasso regression
+
+The mortality variables are, as one might suspect, strongly negatively correlated with life expectancy. While the mortality data we have covers people up to 65 years old and therefore isn't in perfect 1 to 1 correspondence with life expectancy, they still represent sort of an inverse of the target variable. We thought that it could be interesting to check what happens when these variables are removed from the data set, specifically we wanted to check what other variables the stepwise suggested as the most important when mortalities are excluded.
+
+This new model shows a considerable reduction in performances compared to when the variables about mortality are available. This goes to show the importance of those variables for the accuracy of the predictions, which in hindsight is obvious. Without those, the predictions of life expectancy become more difficult to do and less precise. The Observed vs Predicted plot shows higher residuals than before and mean square error on the test set is now 14.7, compared to 2 for the all-variables data set.
+
+```{r}
+#Removing mortalities
+df_new3_ <- data
+columns_to_remove1 <- c("Adult_mortality","Under_five_deaths", "Infant_deaths", "Year","Region", "Economy_status_Developing","Economy_status_Developed","Country")
+df_new3_ <- df_new3_[, !(names(df_new3_) %in% columns_to_remove1)]
+
+str(df_new3_)
+```
+
+We want to understand which variables are the most effective and what is the best model we can choose to describe our data set. However, we also want to avoid problems deriving from collinearity when applying techniques different from ridge. The new VIF suggests an improvement over the larger values, there aren't any 40+ VIF values and the highest ones are now around 12.
+
+```{r}
+#Retraining the linear regression
+set.seed(123) 
+index_1 <- createDataPartition(df_new3_$Life_expectancy, p = 0.8, list = FALSE)
+train_1 <- df_new3_[index, ]  # 80% of data for training
+test_1 <- df_new3_[-index, ]  # 20% of data for test
+
+# Multiple linear regression model
+model_1 <- lm(Life_expectancy ~ ., data = train_1)
+
+# Prediction on test set
+predictions_1 <- predict(model_1, newdata = test_1, interval = "confidence")
+test_1$Predicted <- predictions_1[, "fit"]
+
+# Other metrics on test set
+mse_MLR_1 <- mean((test_1$Life_expectancy - test_1$Predicted)^2)  # Mean Squared Error
+rmse_MLR_1 <- sqrt(mse_MLR_1)  # Root Mean Squared Error
+mae_MLR_1 <- mean(abs(test_1$Life_expectancy - test_1$Predicted))
+cat("Mean Absolute Error (MAE):", mae_MLR_1,"\n")
+cat("MSE on test set:", mse_MLR_1, "\n")
+cat("RMSE on test set:", rmse_MLR_1, "\n")
+
+#Checking VIF again
+vif_values_1 <- vif(model_1)
+cat("VIF Values:\n")
+print(vif_values_1)
+
+#Variables and multicollinearity
+high_vif_1 <- names(vif_values_1[vif_values_1 > 5])  # Usual threshold of VIF > 5
+if (length(high_vif_1) > 0) {
+  cat("\nVariables with VIF > 5 (possible multicollinearity):\n")
+  print(high_vif_1)
+} else {
+  cat("\nThere are not variables con VIF > 5 (multicollinearity not problematic).\n")
+}
+```
+To further remove collinearity, we decided to substitute to the two thinness variable an average of the columns. Polio and Diphtheria have a correlation of 0,95, as do the two thinness variables. The removal of one between Polio and Diphtheria and one between the remaining two mortalities would effectively remove collinearity according to the VIF test. However, without a clear reason to remove one of these variables, we accept a certain level of collinearity.
+
+```{r}
+#Averaging the thinness variables
+df_new3 <- df_new3_
+Thinness_average <- (df_new3_$Thinness_five_nine_years + df_new3_$Thinness_ten_nineteen_years)/2
+df_new3$Thinness_average <- Thinness_average
+df_new3 <- subset(df_new3, select = -c(Thinness_five_nine_years, Thinness_ten_nineteen_years))
+
+str(df_new3)
+
+#Retraining the linear regression
+set.seed(123) 
+index_2 <- createDataPartition(df_new3$Life_expectancy, p = 0.8, list = FALSE)
+train_2 <- df_new3[index, ]  # 80% of data for training
+test_2 <- df_new3[-index, ]  # 20% of data for test
+
+# Multiple linear regression model
+model_2 <- lm(Life_expectancy ~ ., data = train_2)
+
+# Prediction on test set
+predictions_2 <- predict(model_2, newdata = test_2, interval = "confidence")
+test_2$Predicted <- predictions_2[, "fit"]
+
+# Other metrics on test set
+mse_MLR_2 <- mean((test_2$Life_expectancy - test_2$Predicted)^2)  # Mean Squared Error
+rmse_MLR_2 <- sqrt(mse_MLR_2)  # Root Mean Squared Error
+mae_MLR_2 <- mean(abs(test_2$Life_expectancy - test_2$Predicted))
+cat("Mean Absolute Error (MAE):", mae_MLR_2,"\n")
+cat("MSE on test set:", mse_MLR_2, "\n")
+cat("RMSE on test set:", rmse_MLR_2, "\n")
+
+#Checking VIF again
+vif_values_2 <- vif(model_2)
+cat("VIF Values:\n")
+print(vif_values_2)
+
+#Variables and multicollinearity
+high_vif_2 <- names(vif_values_2[vif_values_2 > 5])  # Usual threshold of VIF > 5
+if (length(high_vif_2) > 0) {
+  cat("\nVariables with VIF > 5 (possible multicollinearity):\n")
+  print(high_vif_2)
+} else {
+  cat("\nThere are not variables con VIF > 5 (multicollinearity not problematic).\n")
+}
+```
+
+```{r}
+#Applying MLR again to check if there are differences
+set.seed(123) 
+index <- createDataPartition(df_new3$Life_expectancy, p = 0.8, list = FALSE)
+train0 <- df_new3[index, ]  # 80% of data for training
+test0 <- df_new3[-index, ]  # 20% of data for test
+
+# Multiple linear regression model
+model0 <- lm(Life_expectancy ~ ., data = train0)
+summary(model0)
+
+# Prediction on test set
+predictions0 <- predict(model0, newdata = test0, interval = "confidence")
+test0$Predicted <- predictions0[, "fit"]
+
+#Observed values vs fitted values
+par(mfrow = c(1, 1)) 
+plot(test0$Life_expectancy, test0$Predicted, main = "Observed vs Predicted", 
+     xlab = "Observed Values", ylab = "Predicted Values", pch = 19, col = "blue")
+abline(0, 1, col = "red", lwd = 2)  #Line y = x
+
+# Other metrics on test set
+mse_MLR0 <- mean((test0$Life_expectancy - test0$Predicted)^2)  # Mean Squared Error
+rmse_MLR0 <- sqrt(mse_MLR0)  # Root Mean Squared Error
+mae_MLR0 <- mean(abs(test0$Life_expectancy - test0$Predicted))
+cat("Mean Absolute Error (MAE):", mae_MLR0,"\n")
+cat("MSE on test set:", mse_MLR0, "\n")
+cat("RMSE on test set:", rmse_MLR0, "\n")
+
+# R2
+TSS <- sum((test0$Life_expectancy - mean(test0$Life_expectancy))^2)  # Total Sum of Squares
+ESS <- sum((test0$Predicted - mean(test0$Life_expectancy))^2)  # Sum of Squared Residuals
+R2_MLR_NoMort <- ESS/TSS
+
+cat("R-squared on test set:", R2_MLR_NoMort, "\n")
+```
+When dealing with feature selection we tried to use the best subset selection algorithm, but the  high number of observations and the relatively high number of predictors makes this strategy very expensive in terms of computational time.
+
+```{r}
+#regfit.full <- regsubsets(df_new$Life_expectancy ~ ., data = df_new, nvmax = 16) 
+```
+
+So we decided to apply stepwise selection in order to reduce the research space for the optimal model. We used the forward method, starting with no predictors and then adding one by one until having exhausted all of them. We then can find directly the best model (with the lowest test error) using set-validation approach or cross validation.
+
+The single variable best model suggested by stepwise is based on the Schooling variable, the second one added is the incidence of HIV, then in order Polio, GDP, BMI and the data on population numbers. We found quite unexpected that the first position is occupied by the schooling variable.  
+
+```{r}
+#Stepwise selection on full data set without mortalities
+regfit.fwd.dep <-regsubsets(Life_expectancy~  ., data = df_new3,
+ nvmax = 12, method = "forward")
+summary(regfit.fwd.dep)
+```
+
+To select the best model we check how the test error varies while adding more variables. It is possible do this by considering metrics which, unlike RSS, are less susceptible to overfitting. We can consider Mallow's Cp (linked to the Mean Squared Prediction Error, or MSPE, which doesn't suffer from the same problems of the RSS) and adjusted R^2. We can clearly see how Cp and adjR^2  between 6 and 7 variables reach a plateau. And also for less than 5 variables adjR^2 is already over 0.82 value. This say us that there are some variables which are redundant.
+R2 is still a quite high value but not as high as the 0.97 obtained previously. Perhaps this represents a more realistic value in the absence of very closely related variables to the target of life expectancy. The adjusted R2 values are very similar, suggesting no overfitting problems.
+
+```{r}
+regfit.fwd.dep <-regsubsets(Life_expectancy~  ., data = df_new3,
+ nvmax = 12, method = "forward")
+
+reg.summary <- summary(regfit.fwd.dep)
+cat("R2:", reg.summary$rsq, "\n")
+
+plot(reg.summary$rss, xlab = "Number of Variables",
+ ylab = "RSS", type = "l")
+plot(reg.summary$cp, xlab = "Number of Variables",
+ ylab = "cp", type = "l")
+plot(reg.summary$adjr2, xlab = "Number of Variables",
+ ylab = "adjr2", type = "l")
+cat("Adjusted R2:", reg.summary$adjr2, "\n")
+```
+
+Choosing among models using the validation-set approach and cross-validation. If we want to minimize the test error with the set-validation approach we start splitting our data set in training set (80%) e test set(20%) (used for the validation).
+
+```{r}
+ set.seed(1)
+ train <-sample(c(TRUE, FALSE), nrow(df_new3),
+ replace = TRUE, prob = c(0.8, 0.2))
+ test <- (!train)
+```
+
+We apply regsubsets function to the training and perform the subset selection.
+```{r}
+regfit.fwd <-regsubsets(Life_expectancy~  .,
+data = df_new3[train, ], nvmax = 12, method = "forward")
+```
+
+For each size model we find the validation set error. The model with the minimum test error has 10 variables. Also from this output we can observe there is an high decrease of the validation error between 1 to 2 variable model, then the decreasing is quite flat (MSE is around 16, we didn't improve on the standard regression MSE).
+We then show the coefficient for the model with 10 variables and we can see that the only variable excluded is alcohol consumption. The variables with the greatest coefficients are BMI and schooling (positive coefficients) and HIV incidence (negative coefficient).
+
+```{r}
+test.mat <- model.matrix(Life_expectancy~  ., data = df_new3[test, ])
+
+
+val.errors <- rep(NA, 11)
+for (i in 1:11) {
+  coefi <- coef(regfit.fwd, id = i)
+  pred <- test.mat[, names(coefi), drop = FALSE] %*% coefi
+  val.errors[i] <- mean((df_new3$Life_expectancy[test] - pred)^2)
+}
+
+mse_tot <- val.errors
+best <- which.min(val.errors)
+mse_fwd <- (val.errors[10])
+rmse_fwd <- sqrt(val.errors[10])
+cat("MSE with different n. of variables", mse_tot,"\n")
+cat("Number of optimal variables",best,"\n")
+cat("MSE test:", mse_fwd,"\n")
+cat("RMSE test:", rmse_fwd, "\n")
+#print(mse_fwd)
+#print(rmse_fwd)
+coef(regfit.fwd,10)
+
+```
+
+Considering the 10 variables model, we apply regfit to the whole data set to obtain more accurate coefficient estimates. When all the 10 variables are considered together, the ones with the biggest coefficients are still the same.
+
+```{r}
+regfit.fwd <-regsubsets(Life_expectancy ~ ., data = df_new3,nvmax = 12, method = "forward")
+coef(regfit.fwd,10)
+
+cat("R2 on test set:", reg.summary$rsq[10], "\n")
+R2_fwd <- reg.summary$rsq[10]
+
+# Extract adjusted R^2
+adjusted_r2 <- reg.summary$adjr2
+adjusted_r2_10_fwd <- adjusted_r2[10]
+print(paste("Adjusted R^2 for the 10 variables model:", adjusted_r2_10_fwd))
+```
+
+We could have done this faster,applying cross-validation. We perform forward selection within each of the k training sets. It has been created a vector that allocates each observation to one of k = 10 folds and we create a matrix in which we will store the results. We make our predictions for each model size and compute the test errors on the appropriate subset, then we stored them in the matrix cv.errors.
+
+```{r}
+predict.regsubsets <- function(object, newdata, id, ...) {
+  
+  form <- as.formula(object$call[[2]])
+  mat <- model.matrix(form, newdata)
+  coefi <- coef(object, id = id)
+  xvars <- names(coefi)
+  pred <- mat[, xvars, drop = FALSE] %*% coefi
+  
+  return(pred)
+}
+k <- 10
+ n <-nrow(df_new3)
+ set.seed(1)
+ folds <-sample(rep(1:k, length = n))
+ cv.errors <-matrix(NA, k, 11,
+ dimnames = list(NULL, paste(1:11)))
+
+for (j in 1:k) {
+  # Fit the model on the training data (folds != j)
+  fwd.fit <- regsubsets(Life_expectancy ~ ., data = df_new3[folds != j, ], nvmax = 11, method = "forward")
+  
+  # Loop through the different number of variables (1 to 19)
+  for (i in 1:11) {
+    # Make predictions on the test data (folds == j)
+    pred <- predict(fwd.fit, df_new3[folds == j, ], id = i)
+    
+    # Compute the mean squared error for each fold and number of variables
+    cv.errors[j, i] <- mean((df_new3$Life_expectancy[folds == j] - pred)^2)
+  }
+}
+```
+
+Cross-validation selects a 10-variable model, but we can clearly see how there is a strong correlation with validation-set result. After 5 variables the mean-cv-error really reach a clear plateau suggesting that is not necessary to increase the complexity of the model. The MSE value is about 15.25, slightly lower than before.
+
+```{r}
+mean.cv.errors <-apply(cv.errors, 2, mean)
+mean.cv.errors[which.min(mean.cv.errors)]
+
+par(mfrow = c(1, 1))
+plot(mean.cv.errors, type = "b")
+```
+
+We decided to apply lasso regression to verify if variables selected in the forward stepwise would be discarded and if variables unused in the stepwise would result being useful. So our aim is to validate stepwise results and if possible explore new combination of variables.
+We use glmnet() function to fit the model. We choose a range of lambda between 10^10 and 10^-2, essentially covering the full range of scenarios from the null model containing only the intercept, to the least squares fit. 
+
+```{r}
+x <-model.matrix(Life_expectancy~  ., df_new3)[,-1]
+y <- df_new3$Life_expectancy
+```
+
+With alpha = 1 we set the fit for a LASSO regression. 
+
+```{r}
+ grid <- 10^seq(10,-2, length = 100)
+ lasso.mod <-glmnet(x, y, alpha = 1, lambda = grid)
+```
+
+We split again the data set in test and training subsets.
+
+```{r}
+ set.seed(1)
+ train <-sample(1:nrow(x), nrow(x) / 2)
+ test <- (-train)
+ y.test <- y[test]
+```
+
+We perform lasso regression on the train sample and we apply prediction on the test sample. We then check for the test MSE using for example lambda = 4.  Lambda = 4 gives MSE = 54 which is much greater than the previous result, we are reducing the number of predictors in an excessive way.
+
+```{r}
+lasso.mod <-glmnet(x[train, ], y[train], alpha = 1,lambda = grid, thresh = 1e-12)
+
+lasso.pred <-predict(lasso.mod, s = 4, newx = x[test, ])
+mean((lasso.pred- y.test)^2)
+```
+
+We perform cross-validation to find the best lambda to apply in lasso's model. We see that is almost 0, it is also lower than lambda of ridge regression. The results are telling us that it would be better to apply linear regression. But we can still use it to see how it does the feature selection.
+
+```{r}
+set.seed(1)
+ cv.out <-cv.glmnet(x[train, ], y[train], alpha = 1)
+ plot(cv.out)
+ bestlam <- cv.out$lambda.min
+ cat("Optimal lambda",bestlam,"\n")
+```
+
+The MSE is slightly lower than in the stepwise forward regression and a bit higher than the one of classical linear regression. We may need to set a threshold to check for actually significant variables of the model, but we can already see that Alcohol consumption goes to zero (as in the stepwise selection) and the thinness  has been removed.
+
+```{r}
+lasso.pred <-predict(lasso.mod, s = bestlam,
+ newx = x[test, ])
+ mean((lasso.pred- y.test)^2)
+ out <-glmnet(x, y, alpha = 1)
+ predict(out, type = "coefficients", s = bestlam)[1:11, ]
+```
+
+The following plot shows the path of coefficient in lasso model, while Log lambda changes. Each curve represents the path of a coefficient. The extreme left part of the plot show our case (the lambda selected by cross-validation). There are different (almost all) variables with coefficients not equal to zero.
+
+```{r}
+lasso.mod <-glmnet(x[train, ], y[train], alpha = 1,
+ lambda = grid)
+ plot(lasso.mod, xvar = "lambda", label = TRUE)
+```
+
+We thought to set a threshold, to ignore the more irrelevant variables and to do a comparison in terms of MSE. We see again that reduced MSE (about 18) is greater than the previous ones, but we are also using less variables, therefore obtaining a more efficient algorithm.  With respect to the stepwise results, considering a 10^(-2) threshold for the LASSO coefficients, we get only 8 variables selected. As before, alcohol consumption is removed, but we also see that GDP and population data are removed.
+The results tell us that 8 variables give about the same performances of using all 11 of them. As we saw before, probably no more than 5 variables are needed to obtain very similar performance results. Those selected with the threshold are quite different than the most important variables selected by the stepwise forward algorithm. However, in that case, we are looking at model with an increasing number of variables starting from what the method considers the best on it's own. Here the situation is different, with LASSO finding a set of variables which work best all together and without this iterative process. Also, stepwise forward is somewhat susceptible to different "starting points" and using the best subsets selection could have perhaps offered results similar to those suggested by LASSO, but we considered this as outside the scope of this project.
+
+```{r}
+
+threshold <- 1e-2
+
+coefficients_lasso <- coef(lasso.mod, s = bestlam) 
+coefficients_df <- as.data.frame(as.matrix(coefficients_lasso))
+colnames(coefficients_df) <- "Coefficient"
+
+insignificant_vars <- rownames(coefficients_df[abs(coefficients_df$Coefficient) < threshold, , drop = FALSE])
+significant_vars <- setdiff(rownames(coefficients_df), insignificant_vars)
+
+
+cat("Variables closer to zero:\n", insignificant_vars, "\n")
+cat("More significative variables:\n", significant_vars, "\n")
+
+
+x_reduced <- x[, colnames(x) %in% significant_vars[-1]]  # Exclude intercept (if present)
+
+
+set.seed(1)
+cv_reduced <- cv.glmnet(x_reduced[train, ], y[train], alpha = 1)  
+plot(cv_reduced)
+
+bestlam_reduced <- cv_reduced$lambda.min
+lasso_pred_reduced <- predict(cv_reduced, s = bestlam_reduced, newx = x_reduced[test, ])
+mse_reduced <- mean((lasso_pred_reduced - y.test)^2)
+rmse_reduced <- sqrt(mse_reduced)
+ss_rss <- sum((y.test-lasso_pred_reduced)^2)
+ss_tot <- sum((y.test-mean(y.test))^2)
+R2_lasso <- 1 -(ss_rss/ss_tot)
+# Comparing MSE
+cat("MSE with all variables:", mean((lasso.pred - y.test)^2), "\n")
+cat("MSE with selected variables:", mse_reduced, "\n")
+cat("RMSE with selected variables:", rmse_reduced, "\n")
+cat("R2 LASSO with selected variables:", R2_lasso, "\n")
+
+```
+
+### Developed vs Developing countries
+
+We were also interested in understanding if, considering only data of developed vs developing countries, two different models would come out or not. We are interested in exploring any differences between the most significant variables. As before, we removed the variables about mortality to check for other important features. It's important to notice that our data are unbalanced: the majority of the observations belong to developing countries with 2272 units, while developed countries are represented by 592 units.
+
+```{r}
+
+#Creating two subsets data frame
+df_new4 <- data
+df_new4$Thinness_average <- df_new3$Thinness_average
+columns_to_remove <- c("Adult_mortality","Under_five_deaths", "Infant_deaths", "Year","Region", "Economy_status_Developing","Country", "Thinness_five_nine_years", "Thinness_ten_nineteen_years")
+df_new4 <- df_new4[, !(names(df_new4) %in% columns_to_remove)]
+
+df_new4_developed<- subset(df_new4, Economy_status_Developed == 1)
+df_new4_developing<- subset(df_new4, Economy_status_Developed == 0)
+
+df_new4_developed_num <- subset(df_new4_developed, select = -Economy_status_Developed)
+df_new4_developing_num <- subset(df_new4_developing, select = -Economy_status_Developed)
+
+str(df_new4_developed_num)
+```
+
+We apply multiple linear regression to the whole data set, then to the developed and developing data sets. To verify if significant differences in the coefficients are present, we apply a Chow-test. This should tell us if the models are distinct. The null-hypothesis says that the coefficients of the two models are equal. Since the F-statistic is high and the p-value equal to 0, we can assume that there is a significant difference between the two models. 
+
+```{r}
+df_new4_test <- subset(df_new4, select = -Economy_status_Developed)
+
+set.seed(123) 
+index <- createDataPartition(df_new4_test$Life_expectancy, p = 0.8, list = FALSE)
+train <- df_new4_test[index, ]  # 80% of data for training
+test <- df_new4_test[-index, ]  # 20% of data for test
+
+
+
+# MLR for developed countries data
+model1 <- lm(Life_expectancy ~ ., data = df_new4_developed_num)
+
+# MLR for developing countries
+model2 <- lm(Life_expectancy ~ ., data = df_new4_developing_num)
+
+#MLR to the whole data set
+model_combined <- lm(Life_expectancy ~ ., data = df_new3)
+
+# Prediction on test set developed
+predictions1 <- predict(model1, newdata = test, interval = "confidence")
+test$Predicted1 <- predictions1[, "fit"]
+
+# Prediction on test set developing
+predictions2 <- predict(model2, newdata = test, interval = "confidence")
+test$Predicted2 <- predictions2[, "fit"]
+
+# Prediction on test set combined
+predictions_combined <- predict(model_combined, newdata = test, interval = "confidence")
+test$Predicted_combined <- predictions_combined[, "fit"]
+
+# MSE
+mse_MLR1 <- mean((test$Life_expectancy - test$Predicted1)^2) # Developed
+mse_MLR2 <- mean((test$Life_expectancy - test$Predicted2)^2) # Developing
+mse_MLR_combined <- mean((test$Life_expectancy - test$Predicted_combined)^2)
+cat("MSE on developed countries:", mse_MLR1, "\n")
+cat("MSE on developing countries:", mse_MLR2, "\n")
+cat("MSE on combined countries:", mse_MLR_combined, "\n")
+
+#Calculating RSS for the three models
+RSS_model1 <- sum(residuals(model1)^2)
+RSS_model2 <- sum(residuals(model2)^2)
+RSS_combined <- sum(residuals(model_combined)^2)
+
+R2_MLR1 <- 1 - (RSS_model1 / TSS)
+R2_MLR2 <- 1 - (RSS_model2 / TSS)
+R2_MLR_combined <- 1 - (RSS_combined / TSS)
+
+AdjR2_MLR1 <- 1 - (RSS_model1 / TSS)*(591/580)
+AdjR2_MLR2 <- 1 - (RSS_model2 / TSS)*(2271/2260)
+AdjR2_MLR_combined <- 1 - (RSS_combined / TSS)*(2863/2852)
+
+#R2
+#cat("R-squared DEVELOPED:", R2_MLR1, "\n")
+#cat("Adjusted R-squared DEVELOPED:", AdjR2_MLR1, "\n")
+#cat("R-squared DEVELOPING:", R2_MLR2, "\n")
+#cat("Adjusted R-squared DEVELOPING:", AdjR2_MLR2, "\n")
+#cat("R-squared COMBINED:", R2_MLR_combined, "\n")
+#cat("Adjusted R-squared COMBINED:", AdjR2_MLR_combined, "\n")
+
+
+#Setting parameters to apply chow test
+k <- length(coef(model1)) 
+n1 <- nrow(df_new4_developed_num) 
+n2 <- nrow(df_new4_developing_num) 
+
+# Degree of freedom
+df1 <- k  
+df2 <- n1 + n2 - 2 * k
+
+#Calculate F statistic for Chow Test
+F_stat <- ((RSS_combined - (RSS_model1 + RSS_model2)) / df1) / ((RSS_model1 + RSS_model2) / df2)
+
+# P-value of Chow Test
+p_value <- 1 - pf(F_stat, df1, df2)
+
+# Visualize results
+cat("Chow test results:", "\n")
+cat("F-statistic:", F_stat, "\n")
+cat("p-value:", p_value, "\n")
+```
+To further explore these two models, we use stepwise forward regression on the two groups of data. We start with developed countries data. In this case, the first variables chosen are in order: Thinness average, BMI, Alcohol, Schooling, GDP and Measles. The R2 converges after about 5 variables to 0.72. In the case of developing countries, the selected variables are, as one would expect given the data unbalance, the same selected with the full data set (when mortalities are removed). Stepwise suggests, as does the chow test, that the two models are different and that the most important variables when considering only developed countries are coherent with the fact that in richer countries obesity and excessive alcohol consumption are more important factors than in poorer countries.
+Regarding R2 and adjusted R2 values, we see that the stepwise working only on developed data points obtains a value of around 0.72, while working on developing data points it reaches 0.79. This is likely due to the higher amount of data available for developing countries and both values are lower than the 0.82 obtained on the full data set. Similarly, the MSE values for the developed model are much higher than those for the developing model (127 vs 15) which is instead close to the full data set regression result.
+
+```{r}
+#Stepwise selection on developed countries
+regfit.fwd.dep <-regsubsets(Life_expectancy~  ., data = df_new4_developed_num,
+ nvmax = 12, method = "forward")
+summary(regfit.fwd.dep)
+```
+
+```{r}
+regfit.fwd.dep <-regsubsets(Life_expectancy~  ., data = df_new4_developed_num,
+ nvmax = 12, method = "forward")
+
+reg.summary <- summary(regfit.fwd.dep)
+cat("R2:", reg.summary$rsq, "\n")
+
+plot(reg.summary$rss, xlab = "Number of Variables",
+ ylab = "RSS", type = "l")
+plot(reg.summary$cp, xlab = "Number of Variables",
+ ylab = "cp", type = "l")
+plot(reg.summary$adjr2, xlab = "Number of Variables",
+ ylab = "adjr2", type = "l")
+cat("Adjusted R2:", reg.summary$adjr2, "\n")
+```
+
+```{r}
+#Stepwise regression on developing countries
+regfit.fwd.ding <-regsubsets(Life_expectancy~  ., data = df_new4_developing_num,
+ nvmax = 12, method = "forward")
+summary(regfit.fwd.ding)
+```
+
+```{r}
+regfit.fwd.ding <-regsubsets(Life_expectancy~  ., data = df_new4_developing_num,
+ nvmax = 12, method = "forward")
+
+reg.summary <- summary(regfit.fwd.ding)
+cat("R2:", reg.summary$rsq, "\n")
+
+
+plot(reg.summary$rss, xlab = "Number of Variables",
+ ylab = "RSS", type = "l")
+plot(reg.summary$cp, xlab = "Number of Variables",
+ ylab = "cp", type = "l")
+plot(reg.summary$adjr2, xlab = "Number of Variables",
+ ylab = "adjr2", type = "l")
+cat("Adjusted R2:", reg.summary$adjr2, "\n")
+```
+
+Finally, we checked what results we would obtain when using the original developing and developed variables and adding their interactions to the regression model. The linear regression shows good performance, but worse than without the interaction. In fact, the MSE is about the same but the R2 lowers from about 0.97 to 0.89. This suggests that considering this two variables and their interactions is not useful. This is supported by the fact that the forward selection algorithm selects only 1 between the single variables (Economy_status_Developed, Economy_status_Developing) and their interaction.
+
+```{r}
+df_int <- data
+df_int$Thinness_average <- df_new3$Thinness_average
+columns_to_remove_int <- c("Adult_mortality","Under_five_deaths", "Infant_deaths", "Year","Region","Country", "Thinness_ten_nineteen_years", "Thinness_five_nine_years")
+df_int <- df_int[, !(names(df_int) %in% columns_to_remove_int)]
+str(df_int)
+```
+
+```{r}
+set.seed(123) 
+index <- createDataPartition(df_int$Life_expectancy, p = 0.8, list = FALSE)
+train <- df_int[index, ]  # 80% of data for training
+test <- df_int[-index, ]  # 20% of data for test
+
+# MLR for all numerical variables + developing + developed + their interaction
+model_int <- lm(Life_expectancy ~ . + Economy_status_Developed:Economy_status_Developing, data = df_int)
+
+# Predictions
+predictions_int <- predict(model_int, newdata = test, interval = "confidence")
+test$Predicted_int <- predictions_int[, "fit"]
+
+# MSE
+mse_MLR_int <- mean((test$Life_expectancy - test$Predicted_int)^2)
+cat("MSE when developing/developed interactions is considered:", mse_MLR_int, "\n")
+
+#Calculating RSS for the three models
+#RSS_model_int <- sum(residuals(model_int)^2)
+#R2_MLR_int <- 1 - (RSS_model_int / TSS)
+#cat("R2 when developing/developed interactions is considered:", R2_MLR_int, "\n")
+
+#AdjR2_MLR_int <- 1 - (RSS_model_int / TSS)*(2893/2881)
+#cat("Adjusted R2 when developing/developed interactions is considered:",AdjR2_MLR_int, "\n")
+```
+```{r}
+#Stepwise selection
+regfit.fwd.dep <-regsubsets(Life_expectancy~. +  Economy_status_Developed:Economy_status_Developing, data = df_int,
+ nvmax = 12, method = "forward")
+summary(regfit.fwd.dep)
+```
+```{r}
+regfit.fwd.ding <-regsubsets(Life_expectancy~ . + Economy_status_Developed:Economy_status_Developing, data = df_int,
+ nvmax = 12, method = "forward")
+
+reg.summary <- summary(regfit.fwd.ding)
+cat("R2:", reg.summary$rsq, "\n")
+
+
+plot(reg.summary$rss, xlab = "Number of Variables",
+ ylab = "RSS", type = "l")
+plot(reg.summary$cp, xlab = "Number of Variables",
+ ylab = "cp", type = "l")
+plot(reg.summary$adjr2, xlab = "Number of Variables",
+ ylab = "adjr2", type = "l")
+cat("Adjusted R2:", reg.summary$adjr2, "\n")
+```
+
+## Non-parametric models : Decision-tree and Random Forest 
+
+After dealing with linear regression, we decided to go on and apply non-parametric models such as Regression Tree and then Random Forest. Regression trees are a regression solution capable of handling a lot of complexity in the data while offering great interpretability, allowing to understand the relationships between the predictors and the response variable.
+
+Importing the libraries and the dataset
+
+```{python}
+from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import train_test_split
+from sklearn.tree import DecisionTreeRegressor, plot_tree
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.model_selection import GridSearchCV
+from sklearn.preprocessing import LabelEncoder
+import seaborn as sns
+```
+
+The code excludes the categorical variables "Country", "Region", "Year" from the dataset to obtain a model more directly comparable to our linear regression results. Also, as before, we exclude the mortality related variables because we want to focus on other predictors. The target variable "Life_expectancy" was saved in a different dataframe . This leaves the numerical features to be used as input for the model.
+
+```{python}
+#df2 = pd.read_csv("/Users/chiaracangelosi/Documents/1-Uni/DataScience/SL/Project/Life-Expectancy-Data-Updated.csv")
+df2 = pd.read_csv("C:/Users/g2not/Documents/Data/Life-Expectancy-Data-Updated.csv")
+
+X = df2.drop(columns=['Life_expectancy', 'Country', 'Region', 'Year','Infant_deaths', 'Under_five_deaths', 'Adult_mortality','Economy_status_Developed', 'Economy_status_Developing'])
+
+X['Thinness_average'] = (X['Thinness_five_nine_years']+X['Thinness_ten_nineteen_years'])/2
+
+X = X.drop(columns=['Thinness_five_nine_years', 'Thinness_ten_nineteen_years'])
+
+y = df2['Life_expectancy']
+
+print(X.info(), '\n')
+print(X.head())
+```
+
+The dataset is then split into training and testing sets, with 80% of the data used for training and 20% for testing.
+
+```{python}
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+print("Training features shape:", X_train.shape)
+print("Testing features shape:", X_test.shape)
+print("Training target shape:", y_train.shape)
+print("Testing target shape:", y_test.shape)
+```
+
+Decision Tree Regressor
+
+```{python}
+#Decision Tree Model and data fitting
+decision_tree = DecisionTreeRegressor(random_state=42)
+decision_tree.fit(X_train, y_train)
+```
+
+The performance metrics of the Decision Tree Regressor indicate a highly accurate model. The Mean Squared Error (MSE) of 1.9 suggests that, on average, the squared difference between predicted and actual values is minimal. The Root Mean Squared Error (RMSE) of 1.38, expressed in the same units as the target variable, shows that the typical prediction error is very low. The R² score of 0.977 indicates that the model explains 97.7% of the variance in the target variable, demonstrating an excellent fit. Together, these metrics suggest the model predicts life expectancy with high precision, likely capturing the key relationships in the data.
+
+```{python}
+y_pred_tree = decision_tree.predict(X_test)
+mse_tree = mean_squared_error(y_test, y_pred_tree)
+rmse_tree = np.sqrt(mse_tree)
+r2_tree = r2_score(y_test, y_pred_tree)
+
+print("Decision tree depth:", decision_tree.tree_.max_depth)
+print("Decision Tree Regressor:")
+print("Mean Squared Error:", mse_tree)
+print("Root Mean Squared Error:", rmse_tree)
+print("R2 Score:", r2_tree)
+```
+Using cross-validation with Root Mean Squared Error (RMSE) provides a robust and reliable evaluation of a model's performance. Cross-validation splits the dataset into multiple folds, training and testing the model on different subsets, which reduces the bias and variance associated with a single train-test split. RMSE, expressed in the same units as the target variable, measures the average prediction error and penalizes larger errors more heavily, making it ideal for assessing model accuracy. This combination helps select the best model configuration and ensures generalizability, minimizing the risks of overfitting or underfitting.
+
+```{python}
+# Cross-validation with RMSE
+scores = cross_val_score(
+    decision_tree, X, y,
+    cv=10, #Each fold is then used once as a validation while the k - 1 remaining folds form the training set
+    scoring='neg_mean_squared_error'  # MSE negativo
+)
+
+rmse_scores = np.sqrt(-scores)
+
+print("RMSE for each fold:", rmse_scores)
+print("Mean RMSE:", rmse_scores.mean())
+print("Standard deviation RMSE:", rmse_scores.std())
+```
+
+The optimal Decision Tree parameters seems to be about 15-20 for the depth and min_samples_split=2, resulting in an RMSE of about 1.45 on the test set. This indicates good accuracy, with the tree capturing complex patterns while maintaining strong performance. Selecting a max depth, for example 15, means that the tree is allowed to grow only until it's depth (the number of splits) reaches about 15. The max depth suggested is already very similar to the starting one and we checked that the results are very similar too.
+
+```{python}
+# Create DecisionTreeRegressor model
+decision_tree1 = DecisionTreeRegressor()
+
+# Define the grid of parameters to explore
+param_grid = {
+    'max_depth': [3, 5, 7, 10, 12, 15, 18, 20, None],  # Max depth of the tree
+    'min_samples_split': [2, 3, 4, 5, 10, 20],  # Minimum number of samples to do a split
+}
+
+# Create GridSearchCV
+grid_search = GridSearchCV(estimator=decision_tree1, param_grid=param_grid, cv=10, scoring='neg_mean_squared_error')
+
+# Execute GridSearch
+grid_search.fit(X_train, y_train)
+
+# Visualize best parameters found
+print("Best parameters:", grid_search.best_params_)
+
+# Optimize the model with paramater found
+best_model = grid_search.best_estimator_
+
+# Predict on test data
+y_pred = best_model.predict(X_test)
+
+# Calcolate RMSE
+rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+print(f"RMSE sul test set: {rmse}")
+```
+
+The decision tree plot indicates that the most important variable is HIV, placed at the root node. The right child node is GDP while the left one is schooling years. This suggests that HIV has the strongest influence on life expectancy, having the highest impact in the data set. It minimizes variability the most at the initial split.
+
+```{python}
+# Decision-tree plot
+plt.figure(figsize=(16, 10))
+plot_tree(decision_tree, feature_names=df.columns, filled=True)
+plt.title("Regression Tree Visualization")
+plt.show()
+```
+```{python}
+tree = decision_tree.tree_
+features = [col for col in X_train.columns]
+
+# Root knot
+root_feature_index = tree.feature[0]
+print(f"Rout knot: split on the variable '{features[root_feature_index]}'")
+
+# Children of root knot
+left_child = tree.children_left[0]
+right_child = tree.children_right[0]
+
+if left_child != -1:
+    left_feature_index = tree.feature[left_child]
+    print(f"Left knot: split on the variable '{features[left_feature_index]}'")
+
+if right_child != -1:
+    right_feature_index = tree.feature[right_child]
+    print(f"Right knot: split on the variable '{features[right_feature_index]}'")
+```
+
+The important features selected by the decision tree are, in order: HIV incidence, GDP per capita, schooling, BMI and Polio.
+
+```{python}
+# Calculate and visualize feature importance
+feature_importances = decision_tree.feature_importances_
+
+sorted_indices = np.argsort(feature_importances)[::-1]
+sorted_features = np.array(X_train.columns)[sorted_indices]
+sorted_importances = feature_importances[sorted_indices]
+
+plt.figure(figsize=(10, 6))
+plt.bar(sorted_features, sorted_importances, color='skyblue', align="center")
+plt.title("Feature Importances - Decision Tree")
+plt.xlabel("Features")
+plt.ylabel("Feature Importance")
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.show()
+plt.clf()
+```
+
+We wanted also to see what happened by limiting the max depth to low values. We set a max depth of 5.
+
+```{python}
+#Decision Tree Model and data fitting
+decision_tree = DecisionTreeRegressor(max_depth = 5,random_state=42)
+decision_tree.fit(X_train, y_train)
+```
+The metrics, as one would expect, are much worse than before. The MSE is now about 9, the RMSE 3 and the R2 about 0.88. The new tree is somewhat more readable but not much more. The root node and children are still the same.
+
+```{python}
+y_pred_tree = decision_tree.predict(X_test)
+mse_tree = mean_squared_error(y_test, y_pred_tree)
+rmse_tree = np.sqrt(mse_tree)
+r2_tree = r2_score(y_test, y_pred_tree)
+
+print("Decision tree depth:", decision_tree.tree_.max_depth)
+print("Decision Tree Regressor:")
+print("Mean Squared Error:", mse_tree)
+print("Root Mean Squared Error:", rmse_tree)
+print("R2 Score:", r2_tree)
+```
+
+```{python}
+# Decision-tree plot
+plt.figure(figsize=(16, 10))
+plot_tree(decision_tree, feature_names=df.columns, filled=True)
+plt.title("Regression Tree Visualization")
+plt.show()
+```
+
+```{python}
+tree = decision_tree.tree_
+features = [col for col in X_train.columns]
+
+# Root knot
+root_feature_index = tree.feature[0]
+print(f"Rout knot: split on the variable '{features[root_feature_index]}'")
+
+# Children of root knot
+left_child = tree.children_left[0]
+right_child = tree.children_right[0]
+
+if left_child != -1:
+    left_feature_index = tree.feature[left_child]
+    print(f"Left knot: split on the variable '{features[left_feature_index]}'")
+
+if right_child != -1:
+    right_feature_index = tree.feature[right_child]
+    print(f"Right knot: split on the variable '{features[right_feature_index]}'")
+```
+
+Random Forest Regressor
+
+Let's now see what happens switching from decision tree to random forest regression. The Random Forest Regressor achieves a Mean Squared Error (MSE) of 1.07. The R² score of 0.987. These metrics suggest the model is highly accurate, even better than a Decision Tree Regressor.
+
+```{python}
+# Random Forest Regressor
+random_forest = RandomForestRegressor(random_state=42)
+random_forest.fit(X_train, y_train)
+
+y_pred_forest = random_forest.predict(X_test)
+```
+
+```{python}
+# Evaluating Random Forest
+mse_forest = mean_squared_error(y_test, y_pred_forest)
+rmse_forest = np.sqrt(mse_forest)
+r2_forest = r2_score(y_test, y_pred_forest)
+
+print("\nRandom Forest Regressor:")
+print("Mean Squared Error:", mse_forest)
+print("Root Mean Squared Error:", rmse_forest)
+print("R2 Score:", r2_forest)
+```
+The features significance is similar to those of the decision tree, with HIV incidence and GDP per capita as the first two, but BMI becomes more relevant, followed by schooling years and the average of the thinness variables. Also, differently from before where many variables had an importance close to zero, now all show at least a small influence on the final predictions.
+
+```{python}
+# Visualizing feature importance for Random Forest
+
+# Extracting feature importances
+feature_importances = random_forest.feature_importances_
+features = X.columns
+
+# Sorting features by importance
+indices = np.argsort(feature_importances)[::-1]
+
+plt.figure(figsize=(10, 6))
+plt.title("Feature Importances - Random Forest")
+plt.bar(range(X.shape[1]), feature_importances[indices], align="center")
+plt.xticks(range(X.shape[1]), features[indices], rotation=90)
+plt.xlabel("Features")
+plt.ylabel("Importance")
+plt.tight_layout()
+plt.show()
+```
+
+Residuals are the differences between the actual and predicted values. The residuals are scattered relatively close to the red dashed line (Residual=0), suggesting the Random Forest model is making accurate predictions across most of the range of actual life expectancy values. Some points are further from the red line, indicating that the model struggled more for specific values of life expectancy. There is a mild trend of higher variance (more spread in residuals) at lower life expectancy values, which may indicate the model has slightly less accuracy for countries with shorter life expectancies and displays some amount of heteroscedasticity.
+
+```{python}
+# Calculate residuals
+residuals = y_test - y_pred_forest
+
+# Plot residuals
+plt.figure(figsize=(10, 6))
+plt.scatter(y_test, residuals, alpha=0.6, color='purple')
+plt.axhline(y=0, color='red', linestyle='--')
+plt.xlabel('Actual Life Expectancy')
+plt.ylabel('Residuals')
+plt.title('Residuals of Random Forest Predictions')
+plt.show()
+```
+
+
+We have decidied to repeat the Random Forest analysis on two separate datasets, one for developed countries and another for developing countries in order to improve the model's interpretability and to allow the algorithm to learn patterns specific to each subset, potentially leading to better predictions.
+
+```{python}
+df3 = pd.read_csv("C:/Users/g2not/Documents/Data/Life-Expectancy-Data-Updated.csv")
+
+columns_to_remove = ["Adult_mortality", "Under_five_deaths", "Infant_deaths", "Year", 
+                     "Region", "Economy_status_Developing", "Country"]
+                     
+df3 = df3.drop(columns=columns_to_remove)
+
+df3['Thinness_average'] = (df3['Thinness_five_nine_years']+df3['Thinness_ten_nineteen_years'])/2
+
+df3 = df3.drop(columns=['Thinness_five_nine_years', 'Thinness_ten_nineteen_years'])
+
+# Creating new subsets
+df3_developed = df3[df3["Economy_status_Developed"] == 1]
+df3_developing = df3[df3["Economy_status_Developed"] == 0]
+
+# Removing the column 'Economy_status_Developed' from the two data sets
+df3_developed = df3_developed.drop(columns=["Economy_status_Developed"])
+df3_developing = df3_developing.drop(columns=["Economy_status_Developed"])
+```
+The performance of random forest on the developed countries only is very high, with an extremely low value of 0.22 for the MSE and a very high 0.971 for the R2.
+
+```{python}
+#Developed
+X = df3_developed.drop(columns=['Life_expectancy'])
+y = df3_developed['Life_expectancy']
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Random Forest Regressor
+random_forest = RandomForestRegressor(random_state=42)
+random_forest.fit(X_train, y_train)
+
+y_pred_forest = random_forest.predict(X_test)
+
+mse_forest = mean_squared_error(y_test, y_pred_forest)
+r2_forest = r2_score(y_test, y_pred_forest)
+
+print("\nRandom Forest Regressor:")
+print("Mean Squared Error:", mse_forest)
+print("R2 Score:", r2_forest)
+```
+
+The features that random forest suggests as important for the developed countries are GDP per capita, which is the most significant by far, than thinness, population, alcohol consumption, BMI and schooling. It's interesting to notice that the stepwise on the developed countries suggested that thinness was the best variable for a single feature model, and here we find thinness again in a high position.
+
+```{python}
+# Visualizing feature importance for Random Forest
+
+# Extracting feature importances
+feature_importances = random_forest.feature_importances_
+features = X.columns
+
+# Sorting features by importance
+indices = np.argsort(feature_importances)[::-1]
+
+plt.figure(figsize=(10, 6))
+plt.title("Feature Importances for Developed Countries - Random Forest")
+plt.bar(range(X.shape[1]), feature_importances[indices], align="center")
+plt.xticks(range(X.shape[1]), features[indices], rotation=45)
+plt.xlabel("Features")
+plt.ylabel("Importance")
+plt.tight_layout()
+plt.show()
+```
+The model also performs well on the developing countries data set, with an MSE of 1.3 and an R² score of 0.983. Interestingly, while linear regression performed better on developing countries, for which we have much more data points, random forest seems to perform better on developed countries. The MSE for developing countries only is even higher than that for the total data set, which seems to be a weighted average between the two.
+
+```{python}
+X = df3_developing.drop(columns=['Life_expectancy'])
+y = df3_developing['Life_expectancy']
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+# Random Forest Regressor
+random_forest = RandomForestRegressor(random_state=42)
+random_forest.fit(X_train, y_train)
+
+y_pred_forest = random_forest.predict(X_test)
+
+mse_forest = mean_squared_error(y_test, y_pred_forest)
+r2_forest = r2_score(y_test, y_pred_forest)
+
+print("\nRandom Forest Regressor:")
+print("Mean Squared Error:", mse_forest)
+print("R2 Score:", r2_forest)
+```
+Coherently, the features ordered by importance are the same than for the full data set. This reflects the fact that 80% of the observations refer to this class of countries.
+
+```{python}
+# Visualizing feature importance for Random Forest
+
+# Extracting feature importances
+feature_importances = random_forest.feature_importances_
+features = X.columns
+
+# Sorting features by importance
+indices = np.argsort(feature_importances)[::-1]
+
+plt.figure(figsize=(10, 6))
+plt.title("Feature Importances for Developing Countries - Random Forest")
+plt.bar(range(X.shape[1]), feature_importances[indices], align="center")
+plt.xticks(range(X.shape[1]), features[indices], rotation=90)
+plt.xlabel("Features")
+plt.ylabel("Importance")
+plt.tight_layout()
+plt.show()
+```
+The Incidents_HIV feature dominates in developing countries, reflecting the critical impact of communicable diseases on life expectancy. HIV remains a pressing public health issue in many lower-income regions.
+
+
+
+
+## Classification tree
+
+Another aim of this work is apply a classification tree to a discretized Life expectancy variable(with "High" and "Low" respectively age > 75 and < 75), in order to understand which are the main factor that let us divide the data 
+```{r}
+str(df_new3)
+```
+
+We created a copy of the data set with no multicollinearity and discretized Life_expectancy. It is possible to see how the ratio between high and low values is quite similar to the ratio between developed and developing countries.
+
+```{r}
+library(rpart)
+library(rpart.plot)
+class <- df_new3
+
+class <- class %>%
+  mutate(life_expectancy_category = ifelse(Life_expectancy <= 75, "Low", "High"))
+
+# Converting into factor variable
+class$life_expectancy_category <- as.factor(class$life_expectancy_category)
+
+#Adding Economy_status_Developed to the data frame
+#class$Economy_status_Developed <- data$Economy_status_Developed[match(class$BMI, data$BMI)]
+#class$Economy_status_Developed <- as.factor(class$Economy_status_Developed)
+
+table(class$life_expectancy_category)
+
+```
+We the proceed applying the classification tree. The data set has been splitted into train and test set and the continous Life_expectancy has been removed. Some parameters are also been set to guarantee a certain complexity to the tree: cp = 0.01, maxdepth = 20, minsplit = 20, minbucket = 7, xval = 10. We plotted the tree whose root node is GDP_per_capita and which set the first split of the three: observatio with GDP greater or not of 11.000 (USD). It is easy to interpretate. The terminal knots show the percentages to find a specific class in that specific knot. It is also shown the confusion matrix and the results of different metrics such as specificity or sensitivity. K value expresses how much the model is different from the casual prediction.
+
+```{r}
+# splitting in train and test set
+set.seed(123)  
+train_index <- createDataPartition(class$life_expectancy_category, p = 0.7, list = FALSE)
+train_data <- class[train_index, ]
+test_data <- class[-train_index, ]
+
+# building the classification tree
+tree_model <- rpart(
+  life_expectancy_category ~ . -Life_expectancy,
+  data = train_data,
+  method = "class",
+  control = rpart.control(cp = 0.01,
+    maxdepth = 20,    
+    minsplit = 100,    
+    minbucket = 7,
+    xval = 10 ) 
+)
+
+
+#plotting the tree
+rpart.plot(tree_model, type = 1, extra = 102, under = TRUE, faclen = 0,
+           main = "Decision Tree to classify Life Expectancy higher and lower 75 years old")
+
+# making prediction and producing confusion matrix
+predictions <- predict(tree_model, test_data, type = "class")
+
+confusionMatrix(predictions, test_data$life_expectancy_category)
+
+# feature importance
+importance <- as.data.frame(tree_model$variable.importance)
+colnames(importance) <- "Importance"
+print(importance)
+
+
+```
+It has been applied cross-validation to check which is the best value of cp to use. Cp = 0.039 is the best one, because kappa is 0.70, with 0.89 of accuracy.
+```{r}
+# Cross-validation to find the right value of cp
+cv_model <- train(
+  life_expectancy_category ~ .-Life_expectancy,
+  data = train_data,
+  method = "rpart",
+  trControl = trainControl(method = "cv", number = 10)
+)
+print(cv_model)
+```
+We prune the tree and obtain new results. The tree is significantly reduced, there are only 4-terminal nodes. Accuracy is 0.89% which is higher than INR(no information rate), so the model is better performing than a random classifier. Sensibility is 0.71, which is the probability of well prediction over"High" class. Specificity is 0.96%, which is the probability of well prediction over "Low" class. The balanced accuracy give us an average between specificity and sensibility in order to take into account the unbalance of classes. The model could be improved if classes would be better balanced or using some other optimization on parameter. This is not our aim now. 
+```{r}
+#Applying the pruning on the tree
+tree_model_pruned <- prune(tree_model, cp = 0.039)  # using best cp
+rpart.plot(tree_model_pruned, type = 3, extra = 102, under = TRUE)
+
+# Prediction on test set
+predizioni <- predict(tree_model_pruned,newdata = test_data, type = "class")
+
+# Confusion matrix
+confusionMatrix(predizioni, test_data$life_expectancy_category)
+```
+
+
+## Model comparison
+
+We started model building with linear regression, considering only numeric variables. We wanted to see if linear regression would be able to output precise predictions of life expectancy based on the other variables and also understand which variables affect more our target variable. We compared standard linear regression with the Ridge shrinkage method, which should help in shielding coefficients from the ill effects of collinearity (section 4.1).
+
+Given that the mortality variables are strongly correlated to life expectancy, we checked how much worse the predictions got when ignoring those variables and what variables became central when mortalities were excluded. We applied model selection techniques such as step-wise regression and LASSO regression (cross-validating the results), then compared the results analyzing different performance metrics.
+
+Afterwards, we used the economic status categorical variable as a dummy variable, dividing the data set into developed or developing countries and checked the differences in the variables suggested by the stepwise forward approach (a few comments on this are in the 4.2 section). Here we confront the metrics obtained on this two subsets.
+
+Overall, linear Regression showed positive results with very good predictive capabilities on the test data. Nonetheless, we also decided to try other approaches and applied non-parametric models such as Decision-tree and Random Forest.
+
+We compare MSE and RMSE on the full test set for the standard linear regression and the Ridge regression method. The values are very similar, with Ridge having slightly worse results but having the advantage, in theory, of avoiding the ill effects of collinearity on the regression coefficients. The R2 values are very similar between the two methods.
+
+```{r}
+# Comparing metrics on data sets with the mortality variables
+
+#MSE and RMSE
+mse_values <- c(mse_MLR, mse_ridge)
+rmse_values <- c(rmse_MLR, rmse_ridge)
+
+#R2
+R2_values <- c(R2_MLR, R2_ridge)
+
+models <- c("MLR", "Ridge")
+
+# Table
+comparison_MSE <- data.frame(Model = models, MSE = mse_values, RMSE = rmse_values)
+print(comparison_MSE)
+
+comparison_R2 <- data.frame(Model = models, R2 = R2_values)
+print(comparison_R2)
+
+# Reshape the dataframe to a long format for easier plotting
+comparison_long_MSE <- reshape2::melt(comparison_MSE, id.vars = "Model", variable.name = "Metric", value.name = "Value")
+comparison_long_R2 <- reshape2::melt(comparison_R2, id.vars = "Model", variable.name = "Metric", value.name = "Value")
+
+# Plot to compare the MSE and RMSE
+plot1 <- ggplot(comparison_long_MSE, aes(x = Model, y = Value, fill = Metric)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Comparison of MSE and RMSE between standard regression and Ridge shrinkage",
+       x = "Model",
+       y = "Value",
+       fill = "Metric") +
+  theme_minimal() +
+  scale_fill_manual(values = c("skyblue", "orange"))
+
+# Plot to compare the R2
+plot2 <- ggplot(comparison_long_R2, aes(x = Model, y = Value, fill = Metric)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Comparison of R2 between MLR and Ridge shrinkage",
+       x = "Model",
+       y = "Value",
+       fill = "Metric") +
+  theme_minimal()
+
+grid.arrange(plot1, plot2, ncol = 2)
+```
+When switching to the data set without mortalities, we have the results from the standard linear regression, the LASSO regression method, the stepwise forward selection (with a coefficient threshold of 10^(-2)) and also from the decision tree and random forest techniques. In this case, the divide between linear regression models (without much difference between LASSO, stepwise and standard) and tree models is very strong. The MSE values of the linear models are at about 15 or above, while both decision tree and random forest are significantly below the unity.
+The R-squared metric is relevant for both linear regression models (where we found that in our case R-squared and adjuster R-square are very similar), decision trees and random forest. When mortality variables aren't present, the R2 values of the linear models are all close to 0.8, while decision trees and random forest perform much better again, with both able to keep the score very above 0.97.
+```{r}
+#Comparing metrics on data sets without the mortality variables
+
+#MSE and RMSE
+mse_tree <- 0.5110296684118671
+mse_forest <- 0.23844076265270783
+rmse_tree <- 0.71486339143354329837
+rmse_forest <- 0.48830396542799837
+
+# mse_MLR0: full data set, mse_reduced: results on the models with the variables suggested by LASSO, mse_fwd: results on the model with the variables suggested by forward stepwise
+
+mse_values_NoMort <- c(mse_MLR0, mse_reduced, mse_fwd, mse_tree, mse_forest)
+rmse_values_NoMort <- c(rmse_MLR0, rmse_reduced, rmse_fwd, rmse_tree, rmse_forest)
+
+#R2
+r2_tree <- 0.9770124295681337
+r2_forest <- 0.9870228222482894
+
+r2_values_NoMort <- c(R2_MLR_NoMort, R2_lasso, R2_fwd, r2_tree,r2_forest)
+
+models <- c("MLR", "LASSO", "Stepwise", "Decision Tree", "Random Forest")
+
+# Table
+comparison_MSE_NoMort <- data.frame(Model = models, MSE = mse_values_NoMort, RMSE = rmse_values_NoMort)
+print(comparison_MSE_NoMort)
+
+comparison_R2_NoMort <- data.frame(Model = models, R2 = r2_values_NoMort)
+print(comparison_R2_NoMort)
+
+# Reshape the dataframe to a long format for easier plotting
+comparison_long_MSE_NoMort <- reshape2::melt(comparison_MSE_NoMort, id.vars = "Model", variable.name = "Metric", value.name = "Value")
+comparison_long_R2_NoMort <- reshape2::melt(comparison_R2_NoMort, id.vars = "Model", variable.name = "Metric", value.name = "Value")
+
+# Plot to compare the MSE and RMSE
+plot1 <- ggplot(comparison_long_MSE_NoMort, aes(x = Model, y = Value, fill = Metric)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Comparison of MSE and RMSE",
+       x = "Model",
+       y = "Value",
+       fill = "Metric") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_fill_manual(values = c("skyblue", "orange"))
+
+# Plot to compare the R2
+plot2 <- ggplot(comparison_long_R2_NoMort, aes(x = Model, y = Value, fill = Metric)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Comparison of R2",
+       x = "Model",
+       y = "Value",
+       fill = "Metric") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+grid.arrange(plot1, plot2, ncol = 2)
+```
+
+Lastly, we compare the results obtained on the two subsets of developed vs developing countries. The analysis of the most significative variables according to the stepwise selections and to random forest can be found respectively in section 4.1 and 4.3. To avoid redundancy, here we only compare the metrics. The results show a great advantage in therms of MSE for the random forest model in both subsets. The MSE for the linear regression on developed subsets is particularly poor, with a value of about 120, but strangely shows a very high R2 value. On the contrary, the MLR result on the developing countries show a much better MSE of around 14 but a very low R2 squared of about 0.27 (the adjusted values were very similar). The values of both the MSE and R2 for the random forest model are instead, as always, excellent. However, as noted in section 4.3 too, for some reason the MSE values are slightly higher for developing (above 1) and developed (about 0.2).
+
+```{r}
+
+models <- c("MLR", "Random Forest")
+
+#Comparing metrics on the economic status subets
+#Developed countries
+#MSE and RMSE
+mse_forest_developed <- 0.2209606470588312
+mse_values_NoMort_developed <- c(mse_MLR1, mse_forest_developed)
+rmse_values_NoMort_developed <- c(sqrt(mse_MLR1), sqrt(mse_forest_developed))
+#R2
+r2_forest_developed <- 0.9713193676211396
+r2_values_NoMort_developed <- c(0.72, r2_forest_developed)
+
+# Table
+comparison_MSE_NoMort_developed <- data.frame(Model = models, MSE = mse_values_NoMort_developed, RMSE = rmse_values_NoMort_developed)
+print(comparison_MSE_NoMort_developed)
+
+
+comparison_R2_NoMort_developed <- data.frame(Model = models, R2 = r2_values_NoMort_developed)
+print(comparison_R2_NoMort_developed)
+
+# Reshape the dataframe to a long format for easier plotting
+comparison_long_MSE_NoMort_developed <- reshape2::melt(comparison_MSE_NoMort_developed, id.vars = "Model", variable.name = "Metric", value.name = "Value")
+comparison_long_R2_NoMort_developed <- reshape2::melt(comparison_R2_NoMort_developed, id.vars = "Model", variable.name = "Metric", value.name = "Value")
+
+#Developing countries
+#MSE and RMSE
+mse_forest_developing <- 1.1751279934065932
+mse_values_NoMort_developing <- c(mse_MLR2, mse_forest_developing)
+rmse_values_NoMort_developing <- c(sqrt(mse_MLR2), sqrt(mse_forest_developing))
+#R2
+r2_forest_developing <- 0.985390736189581
+r2_values_NoMort_developing <- c(0.80,r2_forest_developing)
+
+# Table
+comparison_MSE_NoMort_developing <- data.frame(Model = models, MSE = mse_values_NoMort_developing, RMSE = rmse_values_NoMort_developing)
+print(comparison_MSE_NoMort_developing)
+
+comparison_R2_NoMort_developing <- data.frame(Model = models, R2 = r2_values_NoMort_developing)
+print(comparison_R2_NoMort_developing)
+
+# Reshape the dataframe to a long format for easier plotting
+comparison_long_MSE_NoMort_developing <- reshape2::melt(comparison_MSE_NoMort_developing, id.vars = "Model", variable.name = "Metric", value.name = "Value")
+comparison_long_R2_NoMort_developing <- reshape2::melt(comparison_R2_NoMort_developing, id.vars = "Model", variable.name = "Metric", value.name = "Value")
+
+
+# Plot to compare the MSE and RMSE
+plot1 <- ggplot(comparison_long_MSE_NoMort_developed, aes(x = Model, y = Value, fill = Metric)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "MSE and RMSE, Developed",
+       x = "Model",
+       y = "Value",
+       fill = "Metric") +
+  theme_minimal() +
+  scale_fill_manual(values = c("skyblue", "orange"))
+
+plot2 <- ggplot(comparison_long_MSE_NoMort_developing, aes(x = Model, y = Value, fill = Metric)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "MSE and RMSE, Developing",
+       x = "Model",
+       y = "Value",
+       fill = "Metric") +
+  theme_minimal() +
+  scale_fill_manual(values = c("skyblue", "orange"))
+
+# Plot to compare the R2
+plot3 <- ggplot(comparison_long_R2_NoMort_developed, aes(x = Model, y = Value, fill = Metric)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "R2, developed",
+       x = "Model",
+       y = "Value",
+       fill = "Metric") +
+  theme_minimal()
+
+plot4 <- ggplot(comparison_long_R2_NoMort_developing, aes(x = Model, y = Value, fill = Metric)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "R2, developing",
+       x = "Model",
+       y = "Value",
+       fill = "Metric") +
+  theme_minimal()
+
+grid.arrange(plot1, plot2, plot3, plot4, ncol = 2)
+```
+
+
+# Conclusion and interpretation of results
+
+In the end of our analysis, we can say that both the linear regression model and the non-parametric models suggest that the most important variables to correctly predict life expectancy are: HIV, GDP per capita and Schooling years.
+If only developed countries are taken into consideration, GDP retains it's importance but thinness and BMI become the other two most impacting variables.
+
+Both regression models achieved very high levels of precision on our data set, with random forest having the highest performance with near perfect predictions even when mortality variables were ignored. Overall, average life expectancy per country was easily predictable from the other variables at our disposal.
