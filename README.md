@@ -1,1 +1,1 @@
-# Life-Expctancy-analysis
+# Life-Expectancy-analysis
